@@ -31,14 +31,16 @@ jobs:
           manifest = Path("android/app/src/main/AndroidManifest.xml")
           text = manifest.read_text()
 
-          permission = '<uses-permission android:name="android.permission.INTERNET"/>'
+          permission = '    <uses-permission android:name="android.permission.INTERNET"/>\n'
 
-          if permission not in text:
-              text = text.replace(
-                  "<manifest",
-                  permission + "\n<manifest",
-                  1
-              )
+          if 'android.permission.INTERNET' not in text:
+              start = text.find('<manifest')
+              end = text.find('>', start)
+
+              if start == -1 or end == -1:
+                  raise RuntimeError("Could not find <manifest> opening tag")
+
+              text = text[:end + 1] + '\n' + permission + text[end + 1:]
 
           manifest.write_text(text)
           PY
