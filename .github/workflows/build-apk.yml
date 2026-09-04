@@ -23,6 +23,26 @@ jobs:
       - name: Create Android platform files
         run: flutter create --platforms=android .
 
+      - name: Add Internet permission
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          text = manifest.read_text()
+
+          permission = '<uses-permission android:name="android.permission.INTERNET"/>'
+
+          if permission not in text:
+              text = text.replace(
+                  "<manifest",
+                  permission + "\n<manifest",
+                  1
+              )
+
+          manifest.write_text(text)
+          PY
+
       - name: Get dependencies
         run: flutter pub get
 
