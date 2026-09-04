@@ -155,7 +155,7 @@ class _DashboardPageState extends State<DashboardPage> {
             Text('Near-live environmental inputs • Decision-support only', style: TextStyle(color: Colors.grey.shade700)),
             if (loading) const Padding(padding: EdgeInsets.only(top: 10), child: LinearProgressIndicator()),
             if (error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(error!, style: const TextStyle(color: Colors.red))),
-          ])),
+          ]))),
           SizedBox(height: 310, child: ClipRRect(borderRadius: BorderRadius.circular(16), child: FlutterMap(
             options: MapOptions(initialCenter: const LatLng(30.2, 79.3), initialZoom: 7.1),
             children: [
