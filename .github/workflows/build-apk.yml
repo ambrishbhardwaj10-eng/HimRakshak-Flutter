@@ -23,7 +23,7 @@ jobs:
       - name: Create Android platform files
         run: flutter create --platforms=android .
 
-      - name: Add Internet permission
+      - name: Add Android permissions
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -31,16 +31,28 @@ jobs:
           manifest = Path("android/app/src/main/AndroidManifest.xml")
           text = manifest.read_text()
 
-          permission = '    <uses-permission android:name="android.permission.INTERNET"/>\n'
+          permissions = [
+              '<uses-permission android:name="android.permission.INTERNET"/>',
+              '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>',
+              '<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>',
+          ]
 
-          if 'android.permission.INTERNET' not in text:
-              start = text.find('<manifest')
-              end = text.find('>', start)
+          start = text.find('<manifest')
+          end = text.find('>', start)
 
-              if start == -1 or end == -1:
-                  raise RuntimeError("Could not find <manifest> opening tag")
+          if start == -1 or end == -1:
+              raise RuntimeError("Could not find manifest opening tag")
 
-              text = text[:end + 1] + '\n' + permission + text[end + 1:]
+          missing = [
+              p for p in permissions
+              if p.split('"')[1] not in text
+          ]
+
+          if missing:
+              insert = '\n' + '\n'.join(
+                  '    ' + p for p in missing
+              ) + '\n'
+              text = text[:end + 1] + insert + text[end + 1:]
 
           manifest.write_text(text)
           PY
