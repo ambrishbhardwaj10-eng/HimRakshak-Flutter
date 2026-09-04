@@ -124,6 +124,27 @@ class LocationApi {
 
     String getValue(List<String> keys) {
       for (final key in keys) {
+        class _DashboardPageState extends State<DashboardPage> {
+
+  static const places = [
+    MonitoredPlace(...),
+    MonitoredPlace(...),
+    MonitoredPlace(...),
+  ];
+
+  final Map<String, RiskSnapshot> data = {};
+  bool loading = true;
+  String? error;
+  Timer? timer;
+
+  MonitoredPlace selected = places.first;
+
+  // GPS CODE YAHA ADD HOGA
+
+  @override
+  void initState() {
+    ...
+  }
         final value = address[key];
 
         if (value != null &&
