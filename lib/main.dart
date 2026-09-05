@@ -993,11 +993,12 @@ class _DashboardPageState
       }
 
       final position =
-          await Geolocator
-              .getCurrentPosition(
-        desiredAccuracy:
-            LocationAccuracy.high,
-      );
+    await Geolocator.getCurrentPosition(
+  locationSettings:
+      const LocationSettings(
+    accuracy: LocationAccuracy.high,
+  ),
+);
 
       final point =
           LatLng(
