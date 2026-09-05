@@ -140,7 +140,76 @@ class LocationApi {
   MonitoredPlace selected = places.first;
 
   // GPS CODE YAHA ADD HOGA
+final MapController mapController = MapController();
 
+LatLng? userLocation;
+bool locationLoading = false;
+
+
+
+    bool serviceEnabled =
+        await Geolocator.isLocationServiceEnabled();
+
+    if (!serviceEnabled) {
+      setState(() {
+        error = 'Please turn on GPS/location services.';
+        locationLoading = false;
+      });
+      return;
+    }
+
+    LocationPermission permission =
+        await Geolocator.checkPermission();
+
+    if (permission == LocationPermission.denied) {
+      permission =
+          await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied) {
+      setState(() {
+        error = 'Location permission denied.';
+        locationLoading = false;
+      });
+      return;
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      setState(() {
+        error =
+            'Location permission permanently denied. Please enable it from app settings.';
+        locationLoading = false;
+      });
+      return;
+    }
+
+    final position =
+        await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+    );
+
+    final currentPoint = LatLng(
+      position.latitude,
+      position.longitude,
+    );
+
+    setState(() {
+      userLocation = currentPoint;
+      locationLoading = false;
+      error = null;
+    });
+
+    mapController.move(
+      currentPoint,
+      14,
+    );
+  } catch (e) {
+    setState(() {
+      error = 'Unable to get current location: $e';
+      locationLoading = false;
+    });
+  }
+}
   @override
   void initState() {
     ...
