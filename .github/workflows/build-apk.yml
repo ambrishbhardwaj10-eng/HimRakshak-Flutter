@@ -23,42 +23,118 @@ jobs:
       - name: Create Android platform files
         run: flutter create --platforms=android .
 
-      - name: Add Android permissions
+      - name: Configure Android
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
-          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          manifest = Path(
+              "android/app/src/main/AndroidManifest.xml"
+          )
+
           text = manifest.read_text()
 
           permissions = [
               '<uses-permission android:name="android.permission.INTERNET"/>',
               '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>',
               '<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>',
+              '<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>',
           ]
 
-          start = text.find('<manifest')
-          end = text.find('>', start)
+          start = text.find("<manifest")
+          end = text.find(">", start)
 
           if start == -1 or end == -1:
-              raise RuntimeError("Could not find manifest opening tag")
+              raise RuntimeError(
+                  "Manifest opening tag not found"
+              )
 
-          missing = [
-              p for p in permissions
-              if p.split('"')[1] not in text
-          ]
+          missing = []
+
+          for permission in permissions:
+              permission_name = permission.split('"')[1]
+
+              if permission_name not in text:
+                  missing.append(permission)
 
           if missing:
-              insert = '\n' + '\n'.join(
-                  '    ' + p for p in missing
-              ) + '\n'
-              text = text[:end + 1] + insert + text[end + 1:]
+              insert = (
+                  "\n"
+                  + "\n".join(
+                      "    " + item
+                      for item in missing
+                  )
+                  + "\n"
+              )
+
+              text = (
+                  text[:end + 1]
+                  + insert
+                  + text[end + 1:]
+              )
 
           manifest.write_text(text)
+
+          kts = Path(
+              "android/app/build.gradle.kts"
+          )
+
+          if not kts.exists():
+              raise RuntimeError(
+                  "build.gradle.kts not found"
+              )
+
+          gradle = kts.read_text()
+
+          gradle = re.sub(
+              r"compileSdk\s*=\s*flutter\.compileSdkVersion",
+              "compileSdk = 36",
+              gradle,
+              count=1,
+          )
+
+          if (
+              "isCoreLibraryDesugaringEnabled"
+              not in gradle
+          ):
+              gradle = gradle.replace(
+                  "compileOptions {",
+                  "compileOptions {\n"
+                  "        "
+                  "isCoreLibraryDesugaringEnabled = true",
+                  1,
+              )
+
+          if "multiDexEnabled = true" not in gradle:
+              gradle = gradle.replace(
+                  "defaultConfig {",
+                  "defaultConfig {\n"
+                  "        multiDexEnabled = true",
+                  1,
+              )
+
+          dependency = (
+              'coreLibraryDesugaring('
+              '"com.android.tools:desugar_jdk_libs:2.1.4"'
+              ')'
+          )
+
+          if dependency not in gradle:
+              gradle += (
+                  "\n\ndependencies {\n"
+                  f"    {dependency}\n"
+                  "}\n"
+              )
+
+          kts.write_text(gradle)
           PY
 
       - name: Get dependencies
         run: flutter pub get
+
+      - name: Analyze project
+        run: flutter analyze
 
       - name: Build release APK
         run: flutter build apk --release
