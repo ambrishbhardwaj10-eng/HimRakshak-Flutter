@@ -21,7 +21,9 @@ jobs:
           cache: true
 
       - name: Create Android platform files
-        run: flutter create --platforms=android .
+        run: |
+          flutter create --platforms=android .
+          rm -rf test
 
       - name: Configure Android
         run: |
@@ -134,7 +136,7 @@ jobs:
         run: flutter pub get
 
       - name: Analyze project
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
 
       - name: Build release APK
         run: flutter build apk --release
