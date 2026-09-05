@@ -6,8 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
-import 'package:intl/intl.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 void main() {
@@ -23,8 +21,8 @@ class HimRakshakApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'HimRakshak AI',
       theme: ThemeData(
+        colorSchemeSeed: Colors.green,
         useMaterial3: true,
-        colorSchemeSeed: Colors.teal,
       ),
       home: const DashboardPage(),
     );
@@ -45,45 +43,41 @@ class PlaceInfo {
     required this.latitude,
     required this.longitude,
   });
+
+  String get subtitle {
+    final parts = <String>[
+      if (district.isNotEmpty) district,
+      if (state.isNotEmpty) state,
+    ];
+
+    return parts.join(', ');
+  }
 }
 
 class RiskSnapshot {
-  final PlaceInfo place;
-  final double rainfall24;
-  final double rainfall72;
-  final double rainfallNext12;
-  final double soilMoisture;
-  final double windSpeed;
+  final DateTime fetchedAt;
   final double temperature;
+  final double windSpeed;
+  final double rainLast24h;
+  final double rainNext12h;
+  final double soilMoisture;
   final double elevation;
-
   final int landslideRisk;
   final int floodRisk;
   final int overallRisk;
 
-  final DateTime updatedAt;
-
   const RiskSnapshot({
-    required this.place,
-    required this.rainfall24,
-    required this.rainfall72,
-    required this.rainfallNext12,
-    required this.soilMoisture,
-    required this.windSpeed,
+    required this.fetchedAt,
     required this.temperature,
+    required this.windSpeed,
+    required this.rainLast24h,
+    required this.rainNext12h,
+    required this.soilMoisture,
     required this.elevation,
     required this.landslideRisk,
     required this.floodRisk,
     required this.overallRisk,
-    required this.updatedAt,
   });
-
-  String get level {
-    if (overallRisk >= 80) return 'CRITICAL';
-    if (overallRisk >= 60) return 'HIGH';
-    if (overallRisk >= 35) return 'MODERATE';
-    return 'LOW';
-  }
 }
 
 class LocationApi {
@@ -100,169 +94,93 @@ class LocationApi {
       '&addressdetails=1',
     );
 
-    final response = await http.get(
-      uri,
-      headers: {
-        'User-Agent': 'HimRakshakAI/1.0',
-        'Accept': 'application/json',
-      },
-    ).timeout(
-      const Duration(seconds: 20),
-    );
+    try {
+      final response = await http.get(
+        uri,
+        headers: const {
+          'User-Agent': 'HimRakshakAI/1.0',
+          'Accept': 'application/json',
+          'Accept-Language': 'en',
+        },
+      ).timeout(
+        const Duration(seconds: 15),
+      );
 
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Location service unavailable',
+      if (response.statusCode != 200) {
+        return PlaceInfo(
+          name: 'Selected location',
+          district: '',
+          state: '',
+          latitude: latitude,
+          longitude: longitude,
+        );
+      }
+
+      final data =
+          jsonDecode(response.body) as Map<String, dynamic>;
+
+      final address =
+          (data['address'] as Map?)
+                  ?.cast<String, dynamic>() ??
+              <String, dynamic>{};
+
+      String getValue(List<String> keys) {
+        for (final key in keys) {
+          final value = address[key];
+
+          if (value != null &&
+              value.toString().trim().isNotEmpty) {
+            return value.toString().trim();
+          }
+        }
+
+        return '';
+      }
+
+      var name = getValue([
+        'village',
+        'town',
+        'city',
+        'hamlet',
+        'municipality',
+        'suburb',
+      ]);
+
+      if (name.isEmpty) {
+        final display =
+            data['display_name']?.toString().trim() ?? '';
+
+        name = display.isNotEmpty
+            ? display.split(',').first.trim()
+            : 'Selected location';
+      }
+
+      final district = getValue([
+        'state_district',
+        'district',
+        'county',
+      ]);
+
+      final state = getValue([
+        'state',
+      ]);
+
+      return PlaceInfo(
+        name: name,
+        district: district,
+        state: state,
+        latitude: latitude,
+        longitude: longitude,
+      );
+    } catch (_) {
+      return PlaceInfo(
+        name: 'Selected location',
+        district: '',
+        state: '',
+        latitude: latitude,
+        longitude: longitude,
       );
     }
-
-    final data =
-        jsonDecode(response.body) as Map<String, dynamic>;
-
-    final address =
-        (data['address'] as Map<String, dynamic>?) ?? {};
-
-    String getValue(List<String> keys) {
-      for (final key in keys) {
-        class _DashboardPageState extends State<DashboardPage> {
-
-  static const places = [
-    MonitoredPlace(...),
-    MonitoredPlace(...),
-    MonitoredPlace(...),
-  ];
-
-  final Map<String, RiskSnapshot> data = {};
-  bool loading = true;
-  String? error;
-  Timer? timer;
-
-  MonitoredPlace selected = places.first;
-
-  // GPS CODE YAHA ADD HOGA
-final MapController mapController = MapController();
-
-LatLng? userLocation;
-bool locationLoading = false;
-
-
-
-    bool serviceEnabled =
-        await Geolocator.isLocationServiceEnabled();
-
-    if (!serviceEnabled) {
-      setState(() {
-        error = 'Please turn on GPS/location services.';
-        locationLoading = false;
-      });
-      return;
-    }
-
-    LocationPermission permission =
-        await Geolocator.checkPermission();
-
-    if (permission == LocationPermission.denied) {
-      permission =
-          await Geolocator.requestPermission();
-    }
-
-    if (permission == LocationPermission.denied) {
-      setState(() {
-        error = 'Location permission denied.';
-        locationLoading = false;
-      });
-      return;
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      setState(() {
-        error =
-            'Location permission permanently denied. Please enable it from app settings.';
-        locationLoading = false;
-      });
-      return;
-    }
-
-    final position =
-        await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
-    );
-
-    final currentPoint = LatLng(
-      position.latitude,
-      position.longitude,
-    );
-
-    setState(() {
-      userLocation = currentPoint;
-      locationLoading = false;
-      error = null;
-    });
-
-    mapController.move(
-      currentPoint,
-      14,
-    );
-  } catch (e) {
-    setState(() {
-      error = 'Unable to get current location: $e';
-      locationLoading = false;
-    });
-  }
-}
-  @override
-  void initState() {
-    ...
-  }
-        final value = address[key];
-
-        if (value != null &&
-            value.toString().trim().isNotEmpty) {
-          return value.toString();
-        }
-      }
-
-      return '';
-    }
-
-    var name = getValue([
-      'village',
-      'town',
-      'city',
-      'hamlet',
-      'municipality',
-      'suburb',
-    ]);
-
-    final district = getValue([
-      'state_district',
-      'district',
-      'county',
-    ]);
-
-    final state = getValue([
-      'state',
-    ]);
-
-    if (name.isEmpty) {
-      final display =
-          data['display_name']?.toString() ?? '';
-
-      if (display.isNotEmpty) {
-        name = display.split(',').first.trim();
-      } else {
-        name = 'Selected location';
-      }
-    }
-
-    return PlaceInfo(
-      name: name,
-      district:
-          district.isEmpty ? 'Unknown district' : district,
-      state: state.isEmpty ? 'Unknown state' : state,
-      latitude: latitude,
-      longitude: longitude,
-    );
   }
 }
 
@@ -274,19 +192,21 @@ class WeatherRiskService {
       'https://api.open-meteo.com/v1/forecast'
       '?latitude=${place.latitude}'
       '&longitude=${place.longitude}'
-      '&hourly=precipitation,soil_moisture_0_to_1cm,wind_speed_10m,temperature_2m'
-      '&past_days=3'
+      '&hourly=temperature_2m,precipitation,soil_moisture_0_to_1cm,wind_speed_10m'
+      '&past_days=2'
       '&forecast_days=2'
       '&timezone=Asia%2FKolkata',
     );
 
-    final response = await http.get(uri).timeout(
+    final response = await http.get(
+      uri,
+    ).timeout(
       const Duration(seconds: 20),
     );
 
     if (response.statusCode != 200) {
       throw Exception(
-        'Live environmental data unavailable',
+        'Weather service unavailable',
       );
     }
 
@@ -294,170 +214,262 @@ class WeatherRiskService {
         jsonDecode(response.body) as Map<String, dynamic>;
 
     final hourly =
-        data['hourly'] as Map<String, dynamic>;
+        data['hourly'] as Map<String, dynamic>?;
 
-    final times = (hourly['time'] as List)
-        .map(
-          (value) =>
-              DateTime.parse(value.toString()),
-        )
-        .toList();
+    if (hourly == null) {
+      throw Exception(
+        'Weather data unavailable',
+      );
+    }
 
-    final rainfall =
-        (hourly['precipitation'] as List)
+    final times =
+        (hourly['time'] as List? ?? const [])
             .map(
-              (value) =>
-                  (value as num?)?.toDouble() ?? 0,
+              (e) => DateTime.tryParse(
+                e.toString(),
+              ),
             )
             .toList();
 
-    final soil =
-        (hourly['soil_moisture_0_to_1cm'] as List)
-            .map(
-              (value) =>
-                  (value as num?)?.toDouble() ?? 0,
-            )
-            .toList();
+    final temperatures = _toDoubleList(
+      hourly['temperature_2m'] as List?,
+    );
 
-    final wind =
-        (hourly['wind_speed_10m'] as List)
-            .map(
-              (value) =>
-                  (value as num?)?.toDouble() ?? 0,
-            )
-            .toList();
+    final precipitation = _toDoubleList(
+      hourly['precipitation'] as List?,
+    );
 
-    final temperature =
-        (hourly['temperature_2m'] as List)
-            .map(
-              (value) =>
-                  (value as num?)?.toDouble() ?? 0,
-            )
-            .toList();
+    final soil = _toDoubleList(
+      hourly['soil_moisture_0_to_1cm']
+          as List?,
+    );
+
+    final wind = _toDoubleList(
+      hourly['wind_speed_10m'] as List?,
+    );
+
+    if (times.isEmpty ||
+        temperatures.isEmpty) {
+      throw Exception(
+        'Incomplete weather data',
+      );
+    }
 
     final now = DateTime.now();
 
-    double rainfallBetween(
-      Duration past,
-      Duration future,
+    var nearestIndex = 0;
+
+    var bestDiff =
+        const Duration(days: 9999);
+
+    for (var i = 0;
+        i < times.length;
+        i++) {
+      final t = times[i];
+
+      if (t == null) continue;
+
+      final diff =
+          t.difference(now).abs();
+
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        nearestIndex = i;
+      }
+    }
+
+    double sumBetween(
+      DateTime start,
+      DateTime end,
     ) {
-      double total = 0;
+      var sum = 0.0;
 
-      final start = now.subtract(past);
-      final end = now.add(future);
+      for (var i = 0;
+          i < times.length &&
+              i < precipitation.length;
+          i++) {
+        final t = times[i];
 
-      for (var i = 0; i < times.length; i++) {
-        if (!times[i].isBefore(start) &&
-            !times[i].isAfter(end)) {
-          total += rainfall[i];
+        if (t == null) continue;
+
+        if (!t.isBefore(start) &&
+            !t.isAfter(end)) {
+          sum += precipitation[i];
         }
       }
 
-      return total;
+      return sum;
     }
 
-    final rain24 = rainfallBetween(
-      const Duration(hours: 24),
-      Duration.zero,
+    final rainLast24h = sumBetween(
+      now.subtract(
+        const Duration(hours: 24),
+      ),
+      now,
     );
 
-    final rain72 = rainfallBetween(
-      const Duration(hours: 72),
-      Duration.zero,
+    final rainNext12h = sumBetween(
+      now,
+      now.add(
+        const Duration(hours: 12),
+      ),
     );
 
-    final rainNext12 = rainfallBetween(
-      Duration.zero,
-      const Duration(hours: 12),
+    final temperature =
+        _at(
+      temperatures,
+      nearestIndex,
     );
 
-    var nearest = 0;
-    var bestDifference =
-        const Duration(days: 9999);
+    final windSpeed =
+        _at(
+      wind,
+      nearestIndex,
+    );
 
-    for (var i = 0; i < times.length; i++) {
-      final difference =
-          times[i].difference(now).abs();
-
-      if (difference < bestDifference) {
-        bestDifference = difference;
-        nearest = i;
-      }
-    }
-
-    final soilNow = soil[nearest];
-    final windNow = wind[nearest];
-    final temperatureNow =
-        temperature[nearest];
+    final soilMoisture =
+        _at(
+      soil,
+      nearestIndex,
+    );
 
     final elevation =
-        (data['elevation'] as num?)?.toDouble() ?? 0;
-
-    final elevationScore =
-        elevation >= 3000
-            ? 26.0
-            : elevation >= 2200
-                ? 22.0
-                : elevation >= 1400
-                    ? 18.0
-                    : elevation >= 700
-                        ? 12.0
-                        : 8.0;
-
-    final rainfallScore = math.min(
-      42.0,
-      rain24 * 0.35 +
-          rain72 * 0.09 +
-          rainNext12 * 0.28,
+        _asDouble(
+      data['elevation'],
     );
 
-    final soilScore = math.min(
-      24.0,
-      soilNow * 100 * 0.25,
+    final rainSignal =
+        ((rainLast24h +
+                    rainNext12h) /
+                80.0)
+            .clamp(
+      0.0,
+      1.0,
     );
 
-    final windScore = math.min(
-      8.0,
-      windNow * 0.10,
+    final soilSignal =
+        ((soilMoisture - 0.15) /
+                0.35)
+            .clamp(
+      0.0,
+      1.0,
     );
 
-    final landslide = (
-      elevationScore +
-      rainfallScore +
-      soilScore +
-      windScore
-    ).clamp(0.0, 100.0).round();
+    final windSignal =
+        (windSpeed / 70.0).clamp(
+      0.0,
+      1.0,
+    );
 
-    final flood = (
-      rain24 * 0.48 +
-      rain72 * 0.10 +
-      rainNext12 * 0.35 +
-      soilNow * 25 +
-      (elevation < 1500 ? 8 : 2)
-    ).clamp(0.0, 100.0).round();
+    final elevationSignal =
+        (elevation / 3000.0).clamp(
+      0.0,
+      1.0,
+    );
 
-    final overall =
-        math.max(landslide, flood);
+    final landslideRisk = (
+      rainSignal * 45 +
+      soilSignal * 30 +
+      elevationSignal * 20 +
+      windSignal * 5
+    )
+        .round()
+        .clamp(
+          0,
+          100,
+        );
+
+    final floodRisk = (
+      rainSignal * 70 +
+      soilSignal * 20 +
+      math.min(
+            1.0,
+            rainNext12h / 40.0,
+          ) *
+          10
+    )
+        .round()
+        .clamp(
+          0,
+          100,
+        );
+
+    final overallRisk = math
+        .max(
+          landslideRisk,
+          floodRisk,
+        )
+        .clamp(
+          0,
+          100,
+        );
 
     return RiskSnapshot(
-      place: place,
-      rainfall24: rain24,
-      rainfall72: rain72,
-      rainfallNext12: rainNext12,
-      soilMoisture: soilNow,
-      windSpeed: windNow,
-      temperature: temperatureNow,
+      fetchedAt: DateTime.now(),
+      temperature: temperature,
+      windSpeed: windSpeed,
+      rainLast24h: rainLast24h,
+      rainNext12h: rainNext12h,
+      soilMoisture: soilMoisture,
       elevation: elevation,
-      landslideRisk: landslide,
-      floodRisk: flood,
-      overallRisk: overall,
-      updatedAt: DateTime.now(),
+      landslideRisk: landslideRisk,
+      floodRisk: floodRisk,
+      overallRisk: overallRisk,
     );
+  }
+
+  static List<double> _toDoubleList(
+    List? raw,
+  ) {
+    if (raw == null) {
+      return const [];
+    }
+
+    return raw
+        .map(
+          _asDouble,
+        )
+        .toList();
+  }
+
+  static double _asDouble(
+    dynamic value,
+  ) {
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(
+          value?.toString() ?? '',
+        ) ??
+        0;
+  }
+
+  static double _at(
+    List<double> values,
+    int index,
+  ) {
+    if (values.isEmpty) {
+      return 0;
+    }
+
+    if (index < 0) {
+      return values.first;
+    }
+
+    if (index >= values.length) {
+      return values.last;
+    }
+
+    return values[index];
   }
 }
 
-class DashboardPage extends StatefulWidget {
-  const DashboardPage({super.key});
+class DashboardPage
+    extends StatefulWidget {
+  const DashboardPage({
+    super.key,
+  });
 
   @override
   State<DashboardPage> createState() =>
@@ -467,7 +479,10 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState
     extends State<DashboardPage> {
   static const LatLng uttarakhandCenter =
-      LatLng(30.0668, 79.0193);
+      LatLng(
+    30.0668,
+    79.0193,
+  );
 
   final MapController _mapController =
       MapController();
@@ -487,15 +502,24 @@ class _DashboardPageState
   void initState() {
     super.initState();
 
-    WidgetsBinding.instance.addPostFrameCallback(
+    WidgetsBinding.instance
+        .addPostFrameCallback(
       (_) => _loadCurrentLocation(),
     );
 
-    _refreshTimer = Timer.periodic(
-      const Duration(minutes: 15),
+    _refreshTimer =
+        Timer.periodic(
+      const Duration(
+        minutes: 15,
+      ),
       (_) {
-        if (_selectedPlace != null) {
-          _loadRisk(_selectedPlace!);
+        final place =
+            _selectedPlace;
+
+        if (place != null) {
+          _loadRisk(
+            place,
+          );
         }
       },
     );
@@ -504,20 +528,26 @@ class _DashboardPageState
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _mapController.dispose();
+
     super.dispose();
   }
 
-  Future<void> _loadCurrentLocation() async {
+  Future<void>
+      _loadCurrentLocation() async {
     setState(() {
       _loading = true;
       _error = null;
     });
 
     try {
-      var serviceEnabled =
-          await Geolocator.isLocationServiceEnabled();
+      final serviceEnabled =
+          await Geolocator
+              .isLocationServiceEnabled();
 
       if (!serviceEnabled) {
+        if (!mounted) return;
+
         setState(() {
           _loading = false;
           _error =
@@ -525,34 +555,55 @@ class _DashboardPageState
         });
 
         _showUttarakhand();
+
         return;
       }
 
       var permission =
-          await Geolocator.checkPermission();
+          await Geolocator
+              .checkPermission();
 
       if (permission ==
           LocationPermission.denied) {
         permission =
-            await Geolocator.requestPermission();
+            await Geolocator
+                .requestPermission();
       }
 
       if (permission ==
-              LocationPermission.denied ||
-          permission ==
-              LocationPermission.deniedForever) {
+          LocationPermission.denied) {
+        if (!mounted) return;
+
         setState(() {
           _loading = false;
           _error =
-              'Location permission is required to show your current position.';
+              'Location permission denied.';
         });
 
         _showUttarakhand();
+
+        return;
+      }
+
+      if (permission ==
+          LocationPermission
+              .deniedForever) {
+        if (!mounted) return;
+
+        setState(() {
+          _loading = false;
+          _error =
+              'Location permission is permanently denied. Enable it from app settings.';
+        });
+
+        _showUttarakhand();
+
         return;
       }
 
       final position =
-          await Geolocator.getCurrentPosition(
+          await Geolocator
+              .getCurrentPosition(
         desiredAccuracy:
             LocationAccuracy.high,
       );
@@ -593,7 +644,8 @@ class _DashboardPageState
 
   Future<void> _analysePoint(
     LatLng point, {
-    bool fromCurrentLocation = false,
+    bool fromCurrentLocation =
+        false,
   }) async {
     setState(() {
       _loading = true;
@@ -604,7 +656,8 @@ class _DashboardPageState
 
     try {
       final place =
-          await LocationApi.reverseGeocode(
+          await LocationApi
+              .reverseGeocode(
         point.latitude,
         point.longitude,
       );
@@ -616,7 +669,8 @@ class _DashboardPageState
       });
 
       final result =
-          await WeatherRiskService.fetch(
+          await WeatherRiskService
+              .fetch(
         place,
       );
 
@@ -641,7 +695,10 @@ class _DashboardPageState
   ) async {
     try {
       final result =
-          await WeatherRiskService.fetch(place);
+          await WeatherRiskService
+              .fetch(
+        place,
+      );
 
       if (!mounted) return;
 
@@ -658,24 +715,53 @@ class _DashboardPageState
     );
   }
 
-  Color _riskColor(int score) {
-    if (score >= 80) {
-      return Colors.red.shade700;
+  Future<void>
+      _openLocationSettings() async {
+    await Geolocator
+        .openLocationSettings();
+  }
+
+  Future<void>
+      _openAppSettings() async {
+    await Geolocator
+        .openAppSettings();
+  }
+
+  Color _riskColor(
+    int risk,
+  ) {
+    if (risk >= 70) {
+      return Colors.red;
     }
 
-    if (score >= 60) {
-      return Colors.deepOrange;
+    if (risk >= 40) {
+      return Colors.orange;
     }
 
-    if (score >= 35) {
-      return Colors.amber.shade800;
+    return Colors.green;
+  }
+
+  String _riskLabel(
+    int risk,
+  ) {
+    if (risk >= 70) {
+      return 'High';
     }
 
-    return Colors.green.shade700;
+    if (risk >= 40) {
+      return 'Moderate';
+    }
+
+    return 'Low';
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
+    final snapshot =
+        _snapshot;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -683,445 +769,428 @@ class _DashboardPageState
         ),
         actions: [
           IconButton(
-            tooltip: 'My location',
+            tooltip:
+                'View Uttarakhand',
+            onPressed:
+                _showUttarakhand,
+            icon: const Icon(
+              Icons.map_outlined,
+            ),
+          ),
+          IconButton(
+            tooltip:
+                'My location',
             onPressed:
                 _loadCurrentLocation,
             icon: const Icon(
               Icons.my_location,
             ),
           ),
-          IconButton(
-            tooltip:
-                'View Uttarakhand',
-            onPressed:
-                _showUttarakhand,
-            icon: const Icon(
-              Icons.map,
-            ),
-          ),
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed:
-                _selectedPlace == null
-                    ? null
-                    : () => _loadRisk(
-                          _selectedPlace!,
-                        ),
-            icon: const Icon(
-              Icons.refresh,
-            ),
-          ),
         ],
       ),
-      body: ListView(
-        padding:
-            const EdgeInsets.all(12),
-        children: [
-          Card(
-            child: Padding(
-              padding:
-                  const EdgeInsets.all(
-                14,
-              ),
-              child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              flex: 6,
+              child: Stack(
                 children: [
-                  const Text(
-                    'Live Mountain Hazard Intelligence',
-                    style: TextStyle(
-                      fontSize: 21,
-                      fontWeight:
-                          FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(
-                    height: 6,
-                  ),
-                  const Text(
-                    'Your current location is shown first. Pan, zoom or tap anywhere on the map to analyse another location.',
-                  ),
-                  if (_loading)
-                    const Padding(
-                      padding:
-                          EdgeInsets.only(
-                        top: 12,
-                      ),
-                      child:
-                          LinearProgressIndicator(),
-                    ),
-                  if (_error != null)
-                    Padding(
-                      padding:
-                          const EdgeInsets.only(
-                        top: 10,
-                      ),
-                      child: Text(
-                        _error!,
-                        style:
-                            const TextStyle(
-                          color: Colors.red,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 8),
-
-          SizedBox(
-            height: 480,
-            child: ClipRRect(
-              borderRadius:
-                  BorderRadius.circular(
-                18,
-              ),
-              child: FlutterMap(
-                mapController:
-                    _mapController,
-                options: MapOptions(
-                  initialCenter:
-                      uttarakhandCenter,
-                  initialZoom: 7.3,
-                  minZoom: 5,
-                  maxZoom: 18,
-                  onTap:
-                      (
+                  FlutterMap(
+                    mapController:
+                        _mapController,
+                    options:
+                        MapOptions(
+                      initialCenter:
+                          uttarakhandCenter,
+                      initialZoom:
+                          7.3,
+                      minZoom: 5,
+                      maxZoom: 18,
+                      onTap: (
                         tapPosition,
                         point,
                       ) {
-                    _analysePoint(point);
-                  },
-                ),
-                children: [
-                  TileLayer(
-                    urlTemplate:
-                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName:
-                        'in.himrakshak.live',
-                  ),
-
-                  MarkerLayer(
-                    markers: [
-                      if (_userPosition !=
-                          null)
-                        Marker(
-                          point:
-                              _userPosition!,
-                          width: 52,
-                          height: 52,
-                          child:
-                              const Icon(
-                            Icons
-                                .person_pin_circle,
-                            size: 48,
-                            color:
-                                Colors.blue,
-                          ),
-                        ),
-
-                      if (_selectedPosition !=
-                              null &&
-                          _selectedPosition !=
-                              _userPosition)
-                        Marker(
-                          point:
-                              _selectedPosition!,
-                          width: 52,
-                          height: 52,
-                          child: Icon(
-                            Icons
-                                .location_on,
-                            size: 48,
-                            color:
-                                _snapshot ==
+                        _analysePoint(
+                          point,
+                        );
+                      },
+                    ),
+                    children: [
+                      TileLayer(
+                        urlTemplate:
+                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        userAgentPackageName:
+                            'in.himrakshak.live',
+                      ),
+                      MarkerLayer(
+                        markers: [
+                          if (_userPosition !=
+                              null)
+                            Marker(
+                              point:
+                                  _userPosition!,
+                              width: 52,
+                              height: 52,
+                              child:
+                                  const Icon(
+                                Icons
+                                    .person_pin_circle,
+                                size: 48,
+                                color:
+                                    Colors.blue,
+                              ),
+                            ),
+                          if (_selectedPosition !=
+                                  null &&
+                              _selectedPosition !=
+                                  _userPosition)
+                            Marker(
+                              point:
+                                  _selectedPosition!,
+                              width: 52,
+                              height: 52,
+                              child:
+                                  Icon(
+                                Icons
+                                    .location_on,
+                                size: 48,
+                                color: snapshot ==
                                         null
                                     ? Colors
                                         .orange
                                     : _riskColor(
-                                        _snapshot!
+                                        snapshot
                                             .overallRisk,
                                       ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      RichAttributionWidget(
+                        attributions:
+                            const [
+                          TextSourceAttribution(
+                            'OpenStreetMap contributors',
                           ),
-                        ),
-                    ],
-                  ),
-
-                  RichAttributionWidget(
-                    attributions:
-                        const [
-                      TextSourceAttribution(
-                        'OpenStreetMap contributors',
+                        ],
                       ),
                     ],
+                  ),
+                  if (_loading)
+                    const Positioned(
+                      top: 12,
+                      left: 12,
+                      right: 12,
+                      child:
+                          LinearProgressIndicator(),
+                    ),
+                  Positioned(
+                    right: 12,
+                    bottom: 12,
+                    child: Column(
+                      children: [
+                        FloatingActionButton
+                            .small(
+                          heroTag:
+                              'myLocation',
+                          tooltip:
+                              'My location',
+                          onPressed:
+                              _loadCurrentLocation,
+                          child:
+                              const Icon(
+                            Icons.my_location,
+                          ),
+                        ),
+                        const SizedBox(
+                          height: 10,
+                        ),
+                        FloatingActionButton
+                            .small(
+                          heroTag:
+                              'uttarakhand',
+                          tooltip:
+                              'View Uttarakhand',
+                          onPressed:
+                              _showUttarakhand,
+                          child:
+                              const Icon(
+                            Icons.map,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-          ),
-
-          const SizedBox(height: 10),
-
-          Row(
-            children: [
-              Expanded(
-                child:
-                    FilledButton.icon(
-                  onPressed:
-                      _loadCurrentLocation,
-                  icon: const Icon(
-                    Icons.my_location,
-                  ),
-                  label: const Text(
-                    'My Location',
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child:
-                    OutlinedButton.icon(
-                  onPressed:
-                      _showUttarakhand,
-                  icon: const Icon(
-                    Icons.map,
-                  ),
-                  label: const Text(
-                    'Uttarakhand',
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          if (_selectedPlace != null)
-            Card(
-              child: Padding(
+            Expanded(
+              flex: 5,
+              child:
+                  SingleChildScrollView(
                 padding:
                     const EdgeInsets.all(
-                  16,
+                  14,
                 ),
                 child: Column(
                   crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                      CrossAxisAlignment
+                          .stretch,
                   children: [
-                    const Text(
-                      'Selected location',
-                      style: TextStyle(
-                        color:
-                            Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(
-                      height: 4,
-                    ),
-                    Text(
-                      _selectedPlace!.name,
-                      style:
-                          const TextStyle(
-                        fontSize: 22,
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      '${_selectedPlace!.district}, ${_selectedPlace!.state}',
-                    ),
-                    const SizedBox(
-                      height: 8,
-                    ),
-                    Text(
-                      'Latitude: ${_selectedPlace!.latitude.toStringAsFixed(5)}',
-                    ),
-                    Text(
-                      'Longitude: ${_selectedPlace!.longitude.toStringAsFixed(5)}',
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-          if (_snapshot != null)
-            Card(
-              child: Padding(
-                padding:
-                    const EdgeInsets.all(
-                  16,
-                ),
-                child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            _snapshot!
-                                .place
-                                .name,
-                            style:
-                                const TextStyle(
-                              fontSize: 21,
-                              fontWeight:
-                                  FontWeight.bold,
-                            ),
+                    if (_error != null)
+                      Card(
+                        child: Padding(
+                          padding:
+                              const EdgeInsets
+                                  .all(
+                            12,
                           ),
-                        ),
-                        Chip(
-                          label: Text(
-                            _snapshot!
-                                .level,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(
-                      height: 8,
-                    ),
-
-                    Text(
-                      'Overall risk ${_snapshot!.overallRisk}/100',
-                      style: TextStyle(
-                        fontSize: 29,
-                        fontWeight:
-                            FontWeight.bold,
-                        color:
-                            _riskColor(
-                          _snapshot!
-                              .overallRisk,
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(
-                      height: 10,
-                    ),
-
-                    LinearProgressIndicator(
-                      value:
-                          _snapshot!
-                                  .overallRisk /
-                              100,
-                      minHeight: 10,
-                      borderRadius:
-                          BorderRadius.circular(
-                        20,
-                      ),
-                    ),
-
-                    const SizedBox(
-                      height: 18,
-                    ),
-
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _metric(
-                          'Landslide',
-                          '${_snapshot!.landslideRisk}%',
-                        ),
-                        _metric(
-                          'Flash flood',
-                          '${_snapshot!.floodRisk}%',
-                        ),
-                        _metric(
-                          'Rain 24h',
-                          '${_snapshot!.rainfall24.toStringAsFixed(1)} mm',
-                        ),
-                        _metric(
-                          'Rain 72h',
-                          '${_snapshot!.rainfall72.toStringAsFixed(1)} mm',
-                        ),
-                        _metric(
-                          'Next 12h',
-                          '${_snapshot!.rainfallNext12.toStringAsFixed(1)} mm',
-                        ),
-                        _metric(
-                          'Soil moisture',
-                          _snapshot!
-                              .soilMoisture
-                              .toStringAsFixed(
-                                2,
+                          child: Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment
+                                    .start,
+                            children: [
+                              Text(
+                                _error!,
+                                style:
+                                    const TextStyle(
+                                  color:
+                                      Colors.red,
+                                ),
                               ),
+                              const SizedBox(
+                                height: 8,
+                              ),
+                              Wrap(
+                                spacing: 8,
+                                children: [
+                                  TextButton(
+                                    onPressed:
+                                        _openLocationSettings,
+                                    child:
+                                        const Text(
+                                      'Location settings',
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed:
+                                        _openAppSettings,
+                                    child:
+                                        const Text(
+                                      'App settings',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                        _metric(
-                          'Temperature',
-                          '${_snapshot!.temperature.toStringAsFixed(1)} °C',
-                        ),
-                        _metric(
-                          'Wind',
-                          '${_snapshot!.windSpeed.toStringAsFixed(1)} km/h',
-                        ),
-                        _metric(
-                          'Elevation',
-                          '${_snapshot!.elevation.toStringAsFixed(0)} m',
-                        ),
-                      ],
+                      ),
+                    Text(
+                      _selectedPlace
+                              ?.name ??
+                          'Tap anywhere on the map',
+                      style:
+                          Theme.of(
+                        context,
+                      ).textTheme
+                              .titleLarge,
                     ),
-
+                    if ((_selectedPlace
+                                ?.subtitle ??
+                            '')
+                        .isNotEmpty)
+                      Padding(
+                        padding:
+                            const EdgeInsets
+                                .only(
+                          top: 2,
+                        ),
+                        child: Text(
+                          _selectedPlace!
+                              .subtitle,
+                        ),
+                      ),
+                    if (_selectedPosition !=
+                        null)
+                      Padding(
+                        padding:
+                            const EdgeInsets
+                                .only(
+                          top: 4,
+                        ),
+                        child: Text(
+                          '${_selectedPosition!.latitude.toStringAsFixed(5)}, '
+                          '${_selectedPosition!.longitude.toStringAsFixed(5)}',
+                          style:
+                              Theme.of(
+                            context,
+                          ).textTheme
+                                  .bodySmall,
+                        ),
+                      ),
                     const SizedBox(
                       height: 12,
                     ),
-
-                    Text(
-                      'Updated: ${DateFormat('dd MMM yyyy, hh:mm a').format(_snapshot!.updatedAt)}',
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-          if (_snapshot != null)
-            Card(
-              child: Padding(
-                padding:
-                    const EdgeInsets.all(
-                  16,
-                ),
-                child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Why this risk?',
-                      style: TextStyle(
-                        fontSize: 19,
-                        fontWeight:
-                            FontWeight.bold,
+                    if (snapshot !=
+                        null) ...[
+                      Card(
+                        child: Padding(
+                          padding:
+                              const EdgeInsets
+                                  .all(
+                            14,
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                '${snapshot.overallRisk}/100',
+                                style:
+                                    TextStyle(
+                                  fontSize:
+                                      34,
+                                  fontWeight:
+                                      FontWeight
+                                          .bold,
+                                  color:
+                                      _riskColor(
+                                    snapshot
+                                        .overallRisk,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '${_riskLabel(snapshot.overallRisk)} experimental risk indicator',
+                              ),
+                              const SizedBox(
+                                height: 10,
+                              ),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child:
+                                        _metric(
+                                      'Landslide',
+                                      '${snapshot.landslideRisk}/100',
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child:
+                                        _metric(
+                                      'Flood',
+                                      '${snapshot.floodRisk}/100',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(
-                      height: 8,
-                    ),
-                    Text(
-                      '24-hour rainfall: ${_snapshot!.rainfall24.toStringAsFixed(1)} mm\n'
-                      '72-hour rainfall: ${_snapshot!.rainfall72.toStringAsFixed(1)} mm\n'
-                      'Next 12-hour rainfall: ${_snapshot!.rainfallNext12.toStringAsFixed(1)} mm\n'
-                      'Soil moisture: ${_snapshot!.soilMoisture.toStringAsFixed(2)}\n'
-                      'Elevation: ${_snapshot!.elevation.toStringAsFixed(0)} m\n'
-                      'Wind: ${_snapshot!.windSpeed.toStringAsFixed(1)} km/h',
-                    ),
+                      Card(
+                        child: Padding(
+                          padding:
+                              const EdgeInsets
+                                  .all(
+                            14,
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child:
+                                        _metric(
+                                      'Temperature',
+                                      '${snapshot.temperature.toStringAsFixed(1)} °C',
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child:
+                                        _metric(
+                                      'Wind',
+                                      '${snapshot.windSpeed.toStringAsFixed(1)} km/h',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Divider(),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child:
+                                        _metric(
+                                      'Rain 24h',
+                                      '${snapshot.rainLast24h.toStringAsFixed(1)} mm',
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child:
+                                        _metric(
+                                      'Next 12h',
+                                      '${snapshot.rainNext12h.toStringAsFixed(1)} mm',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Divider(),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child:
+                                        _metric(
+                                      'Soil moisture',
+                                      snapshot
+                                          .soilMoisture
+                                          .toStringAsFixed(
+                                        3,
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child:
+                                        _metric(
+                                      'Elevation',
+                                      '${snapshot.elevation.toStringAsFixed(0)} m',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(
+                        height: 8,
+                      ),
+                      const Text(
+                        'Experimental decision-support only. This is not an official emergency warning system. Always follow alerts and instructions from authorized agencies.',
+                        style:
+                            TextStyle(
+                          fontSize: 12,
+                          fontStyle:
+                              FontStyle
+                                  .italic,
+                        ),
+                      ),
+                    ] else if (!_loading)
+                      const Card(
+                        child: Padding(
+                          padding:
+                              EdgeInsets.all(
+                            16,
+                          ),
+                          child: Text(
+                            'Tap a location on the map to load live weather and the experimental hazard indicator.',
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
             ),
-
-          Card(
-            color:
-                Colors.amber.shade50,
-            child: const Padding(
-              padding:
-                  EdgeInsets.all(14),
-              child: Text(
-                'Safety notice: Risk scores are experimental decision-support indicators, not official emergency warnings. Follow DMMC, IMD, CWC, NDMA and local administration advisories for emergency decisions.',
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1130,40 +1199,36 @@ class _DashboardPageState
     String label,
     String value,
   ) {
-    return Container(
-      width: 155,
+    return Padding(
       padding:
-          const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: Colors.black12,
-        ),
-        borderRadius:
-            BorderRadius.circular(
-          12,
-        ),
+          const EdgeInsets.symmetric(
+        horizontal: 4,
+        vertical: 6,
       ),
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
         children: [
           Text(
-            label,
-            style: TextStyle(
-              color:
-                  Colors.grey.shade700,
-            ),
-          ),
-          const SizedBox(
-            height: 4,
-          ),
-          Text(
             value,
-            style: const TextStyle(
+            style:
+                const TextStyle(
               fontWeight:
                   FontWeight.bold,
-              fontSize: 17,
+              fontSize: 16,
             ),
+            textAlign:
+                TextAlign.center,
+          ),
+          const SizedBox(
+            height: 2,
+          ),
+          Text(
+            label,
+            style:
+                const TextStyle(
+              fontSize: 12,
+            ),
+            textAlign:
+                TextAlign.center,
           ),
         ],
       ),
