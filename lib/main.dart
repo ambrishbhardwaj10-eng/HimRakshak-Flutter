@@ -9,11 +9,26 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mbx;
+import 'package:xml/xml.dart';
+
+const String mapboxAccessToken =
+    String.fromEnvironment('MAPBOX_ACCESS_TOKEN');
+
+const String imdAuthHeaderName =
+    String.fromEnvironment('IMD_AUTH_HEADER_NAME');
+
+const String imdAuthHeaderValue =
+    String.fromEnvironment('IMD_AUTH_HEADER_VALUE');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await NotificationService.instance.initialize();
+
+  if (mapboxAccessToken.trim().isNotEmpty) {
+    mbx.MapboxOptions.setAccessToken(mapboxAccessToken);
+  }
 
   runApp(
     const HimRakshakApp(),
@@ -182,6 +197,470 @@ class RiskSnapshot {
     required this.overallRisk,
   });
 }
+
+
+class OfficialObservation {
+  final String source;
+  final String station;
+  final DateTime? observedAt;
+  final double? temperature;
+  final double? humidity;
+  final double? windSpeed;
+  final double? rainfall24h;
+
+  const OfficialObservation({
+    required this.source,
+    required this.station,
+    required this.observedAt,
+    required this.temperature,
+    required this.humidity,
+    required this.windSpeed,
+    required this.rainfall24h,
+  });
+}
+
+class OfficialAlert {
+  final String source;
+  final String title;
+  final String description;
+  final String severity;
+  final DateTime? issuedAt;
+  final String link;
+
+  const OfficialAlert({
+    required this.source,
+    required this.title,
+    required this.description,
+    required this.severity,
+    required this.issuedAt,
+    required this.link,
+  });
+}
+
+class OfficialDataBundle {
+  final OfficialObservation? observation;
+  final List<OfficialAlert> alerts;
+  final String observationStatus;
+  final DateTime fetchedAt;
+
+  const OfficialDataBundle({
+    required this.observation,
+    required this.alerts,
+    required this.observationStatus,
+    required this.fetchedAt,
+  });
+}
+
+class OfficialDataService {
+  static const String _imdCurrentWeatherUrl =
+      'https://api.imd.gov.in/api/v1/current_wx';
+
+  static const String _ndmaRssUrl =
+      'https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml';
+
+  static Future<OfficialDataBundle> fetch(
+    PlaceInfo place,
+  ) async {
+    OfficialObservation? observation;
+    String observationStatus =
+        'IMD official observation is not configured yet. '
+        'Add your IMD API authentication header in GitHub Actions secrets.';
+
+    try {
+      final result = await _fetchImdObservation(place);
+      observation = result.$1;
+      observationStatus = result.$2;
+    } catch (error) {
+      observationStatus =
+          'IMD observation unavailable: $error';
+    }
+
+    List<OfficialAlert> alerts = const [];
+
+    try {
+      alerts = await _fetchNdmaAlerts(place);
+    } catch (_) {
+      alerts = const [];
+    }
+
+    return OfficialDataBundle(
+      observation: observation,
+      alerts: alerts,
+      observationStatus: observationStatus,
+      fetchedAt: DateTime.now(),
+    );
+  }
+
+  static Future<(OfficialObservation?, String)>
+      _fetchImdObservation(
+    PlaceInfo place,
+  ) async {
+    if (imdAuthHeaderName.trim().isEmpty ||
+        imdAuthHeaderValue.trim().isEmpty) {
+      return (
+        null,
+        'IMD official observation requires API authentication. '
+            'The app will never fabricate an IMD reading.'
+      );
+    }
+
+    final response = await http
+        .get(
+          Uri.parse(_imdCurrentWeatherUrl),
+          headers: {
+            imdAuthHeaderName: imdAuthHeaderValue,
+            'Accept': 'application/json',
+          },
+        )
+        .timeout(
+          const Duration(seconds: 15),
+        );
+
+    if (response.statusCode != 200) {
+      return (
+        null,
+        'IMD API returned HTTP ${response.statusCode}.'
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+
+    final rows = <Map<String, dynamic>>[];
+
+    if (decoded is List) {
+      for (final item in decoded) {
+        if (item is Map) {
+          rows.add(
+            item.map(
+              (key, value) =>
+                  MapEntry(key.toString(), value),
+            ),
+          );
+        }
+      }
+    } else if (decoded is Map) {
+      final dynamic possibleData =
+          decoded['data'] ??
+          decoded['result'] ??
+          decoded['records'];
+
+      if (possibleData is List) {
+        for (final item in possibleData) {
+          if (item is Map) {
+            rows.add(
+              item.map(
+                (key, value) =>
+                    MapEntry(key.toString(), value),
+              ),
+            );
+          }
+        }
+      } else {
+        rows.add(
+          decoded.map(
+            (key, value) =>
+                MapEntry(key.toString(), value),
+          ),
+        );
+      }
+    }
+
+    if (rows.isEmpty) {
+      return (
+        null,
+        'IMD returned no current-weather records.'
+      );
+    }
+
+    Map<String, dynamic>? selected;
+
+    final placeTokens = <String>[
+      place.name,
+      place.district,
+    ]
+        .where((value) => value.trim().isNotEmpty)
+        .map((value) => value.toLowerCase())
+        .toList();
+
+    int bestScore = -1;
+
+    for (final row in rows) {
+      final station = _stringValue(
+        row,
+        const [
+          'Station',
+          'station',
+          'Station_Name',
+          'station_name',
+        ],
+      ).toLowerCase();
+
+      var score = 0;
+
+      for (final token in placeTokens) {
+        if (station.contains(token) ||
+            token.contains(station)) {
+          score += 5;
+        } else {
+          for (final part in token.split(RegExp(r'\s+'))) {
+            if (part.length >= 4 &&
+                station.contains(part)) {
+              score += 1;
+            }
+          }
+        }
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        selected = row;
+      }
+    }
+
+    selected ??= rows.first;
+
+    final station = _stringValue(
+      selected,
+      const [
+        'Station',
+        'station',
+        'Station_Name',
+        'station_name',
+      ],
+    );
+
+    final dateText = _stringValue(
+      selected,
+      const [
+        'Date of Observation',
+        'date_of_observation',
+        'Date',
+        'date',
+      ],
+    );
+
+    final timeText = _stringValue(
+      selected,
+      const [
+        'Time of Observation',
+        'time_of_observation',
+        'Time',
+        'time',
+      ],
+    );
+
+    DateTime? observedAt;
+
+    if (dateText.isNotEmpty) {
+      final candidate =
+          '${dateText.trim()} ${timeText.trim()}'.trim();
+
+      observedAt =
+          DateTime.tryParse(candidate) ??
+          DateTime.tryParse(dateText.trim());
+    }
+
+    final observation = OfficialObservation(
+      source: 'India Meteorological Department (IMD)',
+      station:
+          station.isEmpty ? 'IMD reporting station' : station,
+      observedAt: observedAt,
+      temperature: _numberValue(
+        selected,
+        const [
+          'Temperature',
+          'temperature',
+          'Temp',
+          'temp',
+        ],
+      ),
+      humidity: _numberValue(
+        selected,
+        const [
+          'Humidity',
+          'humidity',
+          'RH',
+        ],
+      ),
+      windSpeed: _numberValue(
+        selected,
+        const [
+          'Wind Speed',
+          'wind_speed',
+          'WindSpeed',
+        ],
+      ),
+      rainfall24h: _numberValue(
+        selected,
+        const [
+          'Last 24 hrs Rainfall',
+          'last_24_hrs_rainfall',
+          'Past_24_hrs_Rainfall',
+          'rainfall_24h',
+        ],
+      ),
+    );
+
+    return (
+      observation,
+      'Official IMD observation loaded.'
+    );
+  }
+
+  static Future<List<OfficialAlert>> _fetchNdmaAlerts(
+    PlaceInfo place,
+  ) async {
+    final response = await http
+        .get(
+          Uri.parse(_ndmaRssUrl),
+          headers: const {
+            'Accept':
+                'application/rss+xml, application/xml, text/xml',
+            'User-Agent': 'HimRakshakAI/1.2',
+          },
+        )
+        .timeout(
+          const Duration(seconds: 15),
+        );
+
+    if (response.statusCode != 200) {
+      return const [];
+    }
+
+    final document =
+        XmlDocument.parse(response.body);
+
+    final searchTokens = <String>[
+      place.name,
+      place.district,
+      place.state,
+      'Uttarakhand',
+    ]
+        .where((value) => value.trim().isNotEmpty)
+        .map((value) => value.toLowerCase())
+        .toSet();
+
+    final alerts = <OfficialAlert>[];
+
+    for (final item
+        in document.findAllElements('item')) {
+      final title =
+          item.getElement('title')?.innerText.trim() ??
+          '';
+
+      final description =
+          item.getElement('description')?.innerText.trim() ??
+          '';
+
+      final link =
+          item.getElement('link')?.innerText.trim() ??
+          '';
+
+      final pubDate =
+          item.getElement('pubDate')?.innerText.trim() ??
+          '';
+
+      final combined =
+          '$title $description'.toLowerCase();
+
+      final matches =
+          searchTokens.any(combined.contains);
+
+      if (!matches) {
+        continue;
+      }
+
+      final severity =
+          _inferSeverity('$title $description');
+
+      alerts.add(
+        OfficialAlert(
+          source:
+              'NDMA SACHET / issuing authority',
+          title:
+              title.isEmpty ? 'Official alert' : title,
+          description: description,
+          severity: severity,
+          issuedAt:
+              DateTime.tryParse(pubDate),
+          link: link,
+        ),
+      );
+    }
+
+    return alerts.take(8).toList();
+  }
+
+  static String _inferSeverity(
+    String text,
+  ) {
+    final value = text.toLowerCase();
+
+    if (value.contains('red') ||
+        value.contains('extreme') ||
+        value.contains('severe')) {
+      return 'Severe';
+    }
+
+    if (value.contains('orange')) {
+      return 'Orange';
+    }
+
+    if (value.contains('yellow')) {
+      return 'Yellow';
+    }
+
+    return 'Official';
+  }
+
+  static String _stringValue(
+    Map<String, dynamic> row,
+    List<String> keys,
+  ) {
+    for (final key in keys) {
+      final value = row[key];
+
+      if (value != null &&
+          value.toString().trim().isNotEmpty) {
+        return value.toString().trim();
+      }
+    }
+
+    return '';
+  }
+
+  static double? _numberValue(
+    Map<String, dynamic> row,
+    List<String> keys,
+  ) {
+    for (final key in keys) {
+      final value = row[key];
+
+      if (value is num) {
+        return value.toDouble();
+      }
+
+      final parsed =
+          double.tryParse(
+            value?.toString().replaceAll(',', '').trim() ??
+                '',
+          );
+
+      if (parsed != null) {
+        return parsed;
+      }
+    }
+
+    return null;
+  }
+}
+
+enum HimRakshakMapMode {
+  satellite,
+  hybrid,
+  terrain,
+}
+
 
 class LocationApi {
   static const headers = {
@@ -842,6 +1321,16 @@ class _DashboardPageState
       _mapController =
       MapController();
 
+  mbx.MapboxMap? _mapboxMap;
+
+  mbx.CircleAnnotationManager?
+      _circleAnnotationManager;
+
+  HimRakshakMapMode _mapMode =
+      HimRakshakMapMode.hybrid;
+
+  OfficialDataBundle? _officialData;
+
   final TextEditingController
       _searchController =
       TextEditingController();
@@ -1020,7 +1509,7 @@ class _DashboardPageState
         },
       );
 
-      _mapController.move(
+      await _moveMap(
         point,
         14,
       );
@@ -1054,6 +1543,7 @@ class _DashboardPageState
         _selectedPosition =
             point;
         _snapshot = null;
+        _officialData = null;
       },
     );
 
@@ -1076,11 +1566,16 @@ class _DashboardPageState
         },
       );
 
+      final results = await Future.wait<dynamic>([
+        WeatherRiskService.fetch(place),
+        OfficialDataService.fetch(place),
+      ]);
+
       final snapshot =
-          await WeatherRiskService
-              .fetch(
-        place,
-      );
+          results[0] as RiskSnapshot;
+
+      final official =
+          results[1] as OfficialDataBundle;
 
       if (!mounted) {
         return;
@@ -1088,12 +1583,13 @@ class _DashboardPageState
 
       setState(
         () {
-          _snapshot =
-              snapshot;
-
+          _snapshot = snapshot;
+          _officialData = official;
           _loading = false;
         },
       );
+
+      await _syncMapboxMarkers();
 
       await _criticalCheck(
         place,
@@ -1119,11 +1615,16 @@ class _DashboardPageState
     PlaceInfo place,
   ) async {
     try {
+      final results = await Future.wait<dynamic>([
+        WeatherRiskService.fetch(place),
+        OfficialDataService.fetch(place),
+      ]);
+
       final snapshot =
-          await WeatherRiskService
-              .fetch(
-        place,
-      );
+          results[0] as RiskSnapshot;
+
+      final official =
+          results[1] as OfficialDataBundle;
 
       if (!mounted) {
         return;
@@ -1131,10 +1632,12 @@ class _DashboardPageState
 
       setState(
         () {
-          _snapshot =
-              snapshot;
+          _snapshot = snapshot;
+          _officialData = official;
         },
       );
+
+      await _syncMapboxMarkers();
 
       await _criticalCheck(
         place,
@@ -1367,7 +1870,7 @@ class _DashboardPageState
       selected.longitude,
     );
 
-    _mapController.move(
+    await _moveMap(
       point,
       13,
     );
@@ -1383,15 +1886,21 @@ class _DashboardPageState
         _loading = true;
 
         _snapshot = null;
+        _officialData = null;
       },
     );
 
     try {
+      final results = await Future.wait<dynamic>([
+        WeatherRiskService.fetch(selected),
+        OfficialDataService.fetch(selected),
+      ]);
+
       final snapshot =
-          await WeatherRiskService
-              .fetch(
-        selected,
-      );
+          results[0] as RiskSnapshot;
+
+      final official =
+          results[1] as OfficialDataBundle;
 
       if (!mounted) {
         return;
@@ -1399,12 +1908,13 @@ class _DashboardPageState
 
       setState(
         () {
-          _snapshot =
-              snapshot;
-
+          _snapshot = snapshot;
+          _officialData = official;
           _loading = false;
         },
       );
+
+      await _syncMapboxMarkers();
 
       await _criticalCheck(
         selected,
@@ -1425,11 +1935,150 @@ class _DashboardPageState
     }
   }
 
-  void _showUttarakhand() {
-    _mapController.move(
+  Future<void> _showUttarakhand() async {
+    await _moveMap(
       uttarakhandCenter,
       7.3,
     );
+  }
+
+  Future<void> _moveMap(
+    LatLng point,
+    double zoom,
+  ) async {
+    if (mapboxAccessToken.trim().isNotEmpty &&
+        _mapboxMap != null) {
+      await _mapboxMap!.setCamera(
+        mbx.CameraOptions(
+          center: mbx.Point(
+            coordinates: mbx.Position(
+              point.longitude,
+              point.latitude,
+            ),
+          ),
+          zoom: zoom,
+          pitch:
+              _mapMode == HimRakshakMapMode.terrain
+                  ? 55
+                  : 0,
+        ),
+      );
+    } else {
+      _mapController.move(
+        point,
+        zoom,
+      );
+    }
+
+    await _syncMapboxMarkers();
+  }
+
+  Future<void> _onMapboxCreated(
+    mbx.MapboxMap map,
+  ) async {
+    _mapboxMap = map;
+
+    _circleAnnotationManager =
+        await map.annotations
+            .createCircleAnnotationManager();
+
+    await _syncMapboxMarkers();
+  }
+
+  Future<void> _syncMapboxMarkers() async {
+    final manager =
+        _circleAnnotationManager;
+
+    if (manager == null) {
+      return;
+    }
+
+    await manager.deleteAll();
+
+    if (_userPosition != null) {
+      await manager.create(
+        mbx.CircleAnnotationOptions(
+          geometry: mbx.Point(
+            coordinates: mbx.Position(
+              _userPosition!.longitude,
+              _userPosition!.latitude,
+            ),
+          ),
+          circleRadius: 9,
+          circleColor: 0xFF1976D2,
+          circleStrokeColor: 0xFFFFFFFF,
+          circleStrokeWidth: 3,
+        ),
+      );
+    }
+
+    if (_selectedPosition != null &&
+        _selectedPosition != _userPosition) {
+      final risk =
+          _snapshot?.overallRisk;
+
+      final color = risk == null
+          ? 0xFFFF9800
+          : risk >= criticalRisk
+              ? 0xFFD32F2F
+              : risk >= 40
+                  ? 0xFFF57C00
+                  : 0xFF2E7D32;
+
+      await manager.create(
+        mbx.CircleAnnotationOptions(
+          geometry: mbx.Point(
+            coordinates: mbx.Position(
+              _selectedPosition!.longitude,
+              _selectedPosition!.latitude,
+            ),
+          ),
+          circleRadius: 9,
+          circleColor: color,
+          circleStrokeColor: 0xFFFFFFFF,
+          circleStrokeWidth: 3,
+        ),
+      );
+    }
+  }
+
+  String _mapboxStyle() {
+    switch (_mapMode) {
+      case HimRakshakMapMode.satellite:
+        return mbx.MapboxStyles.SATELLITE;
+      case HimRakshakMapMode.hybrid:
+        return mbx.MapboxStyles.STANDARD_SATELLITE;
+      case HimRakshakMapMode.terrain:
+        return mbx.MapboxStyles.STANDARD;
+    }
+  }
+
+  Future<void> _changeMapMode(
+    HimRakshakMapMode mode,
+  ) async {
+    setState(() {
+      _mapMode = mode;
+    });
+
+    final map = _mapboxMap;
+
+    if (map != null) {
+      await map.loadStyleURI(
+        _mapboxStyle(),
+      );
+
+      final selected =
+          _selectedPosition ??
+          _userPosition ??
+          uttarakhandCenter;
+
+      await _moveMap(
+        selected,
+        mode == HimRakshakMapMode.terrain
+            ? 11
+            : 13,
+      );
+    }
   }
 
   Color _riskColor(
@@ -1562,87 +2211,207 @@ class _DashboardPageState
               flex: 6,
               child: Stack(
                 children: [
-                  FlutterMap(
-                    mapController:
-                        _mapController,
-                    options:
-                        MapOptions(
-                      initialCenter:
-                          uttarakhandCenter,
-                      initialZoom:
-                          7.3,
-                      minZoom: 5,
-                      maxZoom: 18,
-                      onTap:
-                          (
-                        _,
-                        point,
-                      ) {
+                  if (mapboxAccessToken.trim().isNotEmpty)
+                    mbx.MapWidget(
+                      key: const ValueKey(
+                        'himrakshak-mapbox',
+                      ),
+                      styleUri:
+                          _mapboxStyle(),
+                      cameraOptions:
+                          mbx.CameraOptions(
+                        center:
+                            mbx.Point(
+                          coordinates:
+                              mbx.Position(
+                            uttarakhandCenter.longitude,
+                            uttarakhandCenter.latitude,
+                          ),
+                        ),
+                        zoom: 7.3,
+                        pitch:
+                            _mapMode ==
+                                    HimRakshakMapMode.terrain
+                                ? 55
+                                : 0,
+                      ),
+                      onMapCreated:
+                          _onMapboxCreated,
+                      onTapListener:
+                          (gesture) {
+                        final coordinates =
+                            gesture
+                                .point
+                                .coordinates;
+
                         _analysePoint(
-                          point,
+                          LatLng(
+                            coordinates.lat.toDouble(),
+                            coordinates.lng.toDouble(),
+                          ),
                         );
                       },
+                    )
+                  else
+                    FlutterMap(
+                      mapController:
+                          _mapController,
+                      options:
+                          MapOptions(
+                        initialCenter:
+                            uttarakhandCenter,
+                        initialZoom:
+                            7.3,
+                        minZoom: 5,
+                        maxZoom: 18,
+                        onTap:
+                            (
+                          _,
+                          point,
+                        ) {
+                          _analysePoint(
+                            point,
+                          );
+                        },
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName:
+                              'in.himrakshak.live',
+                        ),
+                        MarkerLayer(
+                          markers: [
+                            if (_userPosition !=
+                                null)
+                              Marker(
+                                point:
+                                    _userPosition!,
+                                width: 52,
+                                height: 52,
+                                child:
+                                    const Icon(
+                                  Icons.person_pin_circle,
+                                  size: 48,
+                                  color: Colors.blue,
+                                ),
+                              ),
+                            if (_selectedPosition !=
+                                    null &&
+                                _selectedPosition !=
+                                    _userPosition)
+                              Marker(
+                                point:
+                                    _selectedPosition!,
+                                width: 52,
+                                height: 52,
+                                child:
+                                    Icon(
+                                  Icons.location_on,
+                                  size: 48,
+                                  color: snapshot ==
+                                          null
+                                      ? Colors.orange
+                                      : _riskColor(
+                                          snapshot
+                                              .overallRisk,
+                                        ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        RichAttributionWidget(
+                          attributions:
+                              const [
+                            TextSourceAttribution(
+                              'OpenStreetMap contributors',
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                    children: [
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName:
-                            'in.himrakshak.live',
-                      ),
-                      MarkerLayer(
-                        markers: [
-                          if (_userPosition !=
-                              null)
-                            Marker(
-                              point:
-                                  _userPosition!,
-                              width: 52,
-                              height: 52,
-                              child:
-                                  const Icon(
-                                Icons
-                                    .person_pin_circle,
-                                size: 48,
-                                color:
-                                    Colors.blue,
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: Card(
+                      child: Padding(
+                        padding:
+                            const EdgeInsets.all(6),
+                        child: mapboxAccessToken
+                                .trim()
+                                .isNotEmpty
+                            ? PopupMenuButton<
+                                HimRakshakMapMode>(
+                                tooltip:
+                                    'Map style',
+                                initialValue:
+                                    _mapMode,
+                                onSelected:
+                                    _changeMapMode,
+                                itemBuilder:
+                                    (context) =>
+                                        const [
+                                  PopupMenuItem(
+                                    value:
+                                        HimRakshakMapMode
+                                            .satellite,
+                                    child:
+                                        Text(
+                                      'Satellite',
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value:
+                                        HimRakshakMapMode
+                                            .hybrid,
+                                    child:
+                                        Text(
+                                      'Hybrid',
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value:
+                                        HimRakshakMapMode
+                                            .terrain,
+                                    child:
+                                        Text(
+                                      'Terrain / 3D',
+                                    ),
+                                  ),
+                                ],
+                                child: const Row(
+                                  mainAxisSize:
+                                      MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.layers_outlined,
+                                    ),
+                                    SizedBox(
+                                      width: 6,
+                                    ),
+                                    Text(
+                                      'Map',
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : const Padding(
+                                padding:
+                                    EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 4,
+                                ),
+                                child: Text(
+                                  'OSM fallback',
+                                  style:
+                                      TextStyle(
+                                    fontSize: 11,
+                                  ),
+                                ),
                               ),
-                            ),
-                          if (_selectedPosition !=
-                                  null &&
-                              _selectedPosition !=
-                                  _userPosition)
-                            Marker(
-                              point:
-                                  _selectedPosition!,
-                              width: 52,
-                              height: 52,
-                              child:
-                                  Icon(
-                                Icons
-                                    .location_on,
-                                size: 48,
-                                color: snapshot ==
-                                        null
-                                    ? Colors
-                                        .orange
-                                    : _riskColor(
-                                        snapshot
-                                            .overallRisk,
-                                      ),
-                              ),
-                            ),
-                        ],
                       ),
-                      RichAttributionWidget(
-                        attributions:
-                            const [
-                          TextSourceAttribution(
-                            'OpenStreetMap contributors',
-                          ),
-                        ],
-                      ),
-                    ],
+                    ),
                   ),
                   if (_loading)
                     const Positioned(
@@ -1755,6 +2524,249 @@ class _DashboardPageState
                     const SizedBox(
                       height: 12,
                     ),
+                    if (_officialData != null) ...[
+                      Card(
+                        child: Padding(
+                          padding:
+                              const EdgeInsets.all(
+                            14,
+                          ),
+                          child: Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(
+                                    Icons.verified_outlined,
+                                  ),
+                                  SizedBox(
+                                    width: 8,
+                                  ),
+                                  Text(
+                                    'Official / Observed Data',
+                                    style:
+                                        TextStyle(
+                                      fontWeight:
+                                          FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(
+                                height: 10,
+                              ),
+                              if (_officialData!
+                                      .observation !=
+                                  null) ...[
+                                Text(
+                                  _officialData!
+                                      .observation!
+                                      .source,
+                                  style:
+                                      const TextStyle(
+                                    fontWeight:
+                                        FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  'Station: '
+                                  '${_officialData!.observation!.station}',
+                                ),
+                                if (_officialData!
+                                        .observation!
+                                        .observedAt !=
+                                    null)
+                                  Text(
+                                    'Observed: '
+                                    '${_formatTime(_officialData!.observation!.observedAt!)}',
+                                  ),
+                                const SizedBox(
+                                  height: 10,
+                                ),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _metric(
+                                        'Temperature',
+                                        _formatMetric(
+                                          _officialData!
+                                              .observation!
+                                              .temperature,
+                                          '掳C',
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: _metric(
+                                        'Humidity',
+                                        _formatMetric(
+                                          _officialData!
+                                              .observation!
+                                              .humidity,
+                                          '%',
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const Divider(),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _metric(
+                                        'Wind',
+                                        _formatMetric(
+                                          _officialData!
+                                              .observation!
+                                              .windSpeed,
+                                          'km/h',
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: _metric(
+                                        'Rain 24h',
+                                        _formatMetric(
+                                          _officialData!
+                                              .observation!
+                                              .rainfall24h,
+                                          'mm',
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ] else
+                                Text(
+                                  _officialData!
+                                      .observationStatus,
+                                  style:
+                                      const TextStyle(
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              const SizedBox(
+                                height: 8,
+                              ),
+                              Text(
+                                'Fetched: '
+                                '${_formatTime(_officialData!.fetchedAt)}',
+                                style:
+                                    const TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Card(
+                        child: Padding(
+                          padding:
+                              const EdgeInsets.all(
+                            14,
+                          ),
+                          child: Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                children: [
+                                  Icon(
+                                    Icons.warning_amber_rounded,
+                                  ),
+                                  SizedBox(
+                                    width: 8,
+                                  ),
+                                  Text(
+                                    'Official Alerts 鈥� NDMA SACHET',
+                                    style:
+                                        TextStyle(
+                                      fontWeight:
+                                          FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(
+                                height: 8,
+                              ),
+                              if (_officialData!
+                                  .alerts
+                                  .isEmpty)
+                                const Text(
+                                  'No matching live SACHET alert was found for this place/district in the current feed.',
+                                  style:
+                                      TextStyle(
+                                    fontSize: 12,
+                                  ),
+                                )
+                              else
+                                ..._officialData!
+                                    .alerts
+                                    .map(
+                                  (alert) =>
+                                      Padding(
+                                    padding:
+                                        const EdgeInsets.only(
+                                      bottom: 10,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '${alert.severity}: ${alert.title}',
+                                          style:
+                                              const TextStyle(
+                                            fontWeight:
+                                                FontWeight.bold,
+                                          ),
+                                        ),
+                                        if (alert
+                                            .description
+                                            .isNotEmpty)
+                                          Text(
+                                            alert.description,
+                                            maxLines: 4,
+                                            overflow:
+                                                TextOverflow.ellipsis,
+                                          ),
+                                        if (alert
+                                                .issuedAt !=
+                                            null)
+                                          Text(
+                                            'Issued: '
+                                            '${_formatTime(alert.issuedAt!)}',
+                                            style:
+                                                const TextStyle(
+                                              fontSize: 11,
+                                              color:
+                                                  Colors.grey,
+                                            ),
+                                          ),
+                                        Text(
+                                          'Source: ${alert.source}',
+                                          style:
+                                              const TextStyle(
+                                            fontSize: 11,
+                                            color:
+                                                Colors.grey,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                     if (snapshot !=
                         null) ...[
                       Card(
@@ -1829,7 +2841,7 @@ class _DashboardPageState
                                     child:
                                         _metric(
                                       'Temperature',
-                                      '${snapshot.temperature.toStringAsFixed(1)} °C',
+                                      '${snapshot.temperature.toStringAsFixed(1)} 掳C',
                                     ),
                                   ),
                                   Expanded(
@@ -1887,9 +2899,51 @@ class _DashboardPageState
                           ),
                         ),
                       ),
+                      Card(
+                        child: Padding(
+                          padding:
+                              const EdgeInsets.all(
+                            14,
+                          ),
+                          child: Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Why is this score high?',
+                                style:
+                                    TextStyle(
+                                  fontWeight:
+                                      FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(
+                                height: 6,
+                              ),
+                              Text(
+                                _riskReason(snapshot),
+                              ),
+                              const SizedBox(
+                                height: 8,
+                              ),
+                              const Text(
+                                'Experimental inputs: Open-Meteo weather/model data + elevation. '
+                                'Weights: landslide = rain 45%, soil moisture 30%, elevation 20%, wind 5%; '
+                                'flood = rain 70%, soil moisture 20%, next-12h rain 10%.',
+                                style:
+                                    TextStyle(
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                       const Text(
                         'Experimental decision-support only. '
-                        'This is not an official emergency warning system. '
+                        'The 0鈥�100 HimRakshak score is not an official probability. '
+                        'Official observations and alerts are displayed separately above. '
                         'Always follow authorized agency alerts.',
                         style:
                             TextStyle(
@@ -1908,6 +2962,64 @@ class _DashboardPageState
         ),
       ),
     );
+  }
+
+  String _formatTime(
+    DateTime value,
+  ) {
+    final local =
+        value.toLocal();
+
+    String two(int number) =>
+        number.toString().padLeft(2, '0');
+
+    return '${two(local.day)}/${two(local.month)}/${local.year} '
+        '${two(local.hour)}:${two(local.minute)}';
+  }
+
+  String _formatMetric(
+    double? value,
+    String unit,
+  ) {
+    if (value == null) {
+      return 'N/A';
+    }
+
+    return '${value.toStringAsFixed(1)} $unit';
+  }
+
+  String _riskReason(
+    RiskSnapshot snapshot,
+  ) {
+    final reasons = <String>[];
+
+    if (snapshot.rainLast24h +
+            snapshot.rainNext12h >=
+        40) {
+      reasons.add('high recent/forecast rainfall');
+    }
+
+    if (snapshot.soilMoisture >=
+        0.30) {
+      reasons.add('wet near-surface soil');
+    }
+
+    if (snapshot.elevation >=
+        1800) {
+      reasons.add('mountain/elevation exposure');
+    }
+
+    if (snapshot.windSpeed >=
+        40) {
+      reasons.add('strong wind');
+    }
+
+    if (reasons.isEmpty) {
+      return 'No single strong driver is dominating; '
+          'the score comes from the weighted combination of current inputs.';
+    }
+
+    return 'Main drivers: ${reasons.join(', ')}.';
   }
 
   Widget _metric(
