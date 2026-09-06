@@ -9,17 +9,24 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mbx;
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart'
+    as mbx;
 import 'package:xml/xml.dart';
 
 const String mapboxAccessToken =
-    String.fromEnvironment('MAPBOX_ACCESS_TOKEN');
+    String.fromEnvironment(
+  'MAPBOX_ACCESS_TOKEN',
+);
 
 const String imdAuthHeaderName =
-    String.fromEnvironment('IMD_AUTH_HEADER_NAME');
+    String.fromEnvironment(
+  'IMD_AUTH_HEADER_NAME',
+);
 
 const String imdAuthHeaderValue =
-    String.fromEnvironment('IMD_AUTH_HEADER_VALUE');
+    String.fromEnvironment(
+  'IMD_AUTH_HEADER_VALUE',
+);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,7 +34,9 @@ Future<void> main() async {
   await NotificationService.instance.initialize();
 
   if (mapboxAccessToken.trim().isNotEmpty) {
-    mbx.MapboxOptions.setAccessToken(mapboxAccessToken);
+    mbx.MapboxOptions.setAccessToken(
+      mapboxAccessToken,
+    );
   }
 
   runApp(
@@ -99,8 +108,7 @@ class NotificationService {
     );
   }
 
-  Future<void>
-      requestPermission() async {
+  Future<void> requestPermission() async {
     final android =
         _plugin.resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
@@ -198,11 +206,11 @@ class RiskSnapshot {
   });
 }
 
-
 class OfficialObservation {
   final String source;
   final String station;
   final DateTime? observedAt;
+
   final double? temperature;
   final double? humidity;
   final double? windSpeed;
@@ -239,8 +247,11 @@ class OfficialAlert {
 
 class OfficialDataBundle {
   final OfficialObservation? observation;
+
   final List<OfficialAlert> alerts;
+
   final String observationStatus;
+
   final DateTime fetchedAt;
 
   const OfficialDataBundle({
@@ -256,18 +267,26 @@ class OfficialDataService {
       'https://api.imd.gov.in/api/v1/current_wx';
 
   static const String _ndmaRssUrl =
-      'https://sachet.ndma.gov.in/cap_public_website/rss/rss_india.xml';
+      'https://sachet.ndma.gov.in/'
+      'cap_public_website/rss/rss_india.xml';
 
   static Future<OfficialDataBundle> fetch(
     PlaceInfo place,
   ) async {
     OfficialObservation? observation;
+
     String observationStatus =
-        'IMD official observation is not configured yet. '
-        'Add your IMD API authentication header in GitHub Actions secrets.';
+        'IMD official observation is not '
+        'configured yet. '
+        'Add your IMD API authentication '
+        'header in GitHub Actions secrets.';
 
     try {
-      final result = await _fetchImdObservation(place);
+      final result =
+          await _fetchImdObservation(
+        place,
+      );
+
       observation = result.$1;
       observationStatus = result.$2;
     } catch (error) {
@@ -275,10 +294,14 @@ class OfficialDataService {
           'IMD observation unavailable: $error';
     }
 
-    List<OfficialAlert> alerts = const [];
+    List<OfficialAlert> alerts =
+        const [];
 
     try {
-      alerts = await _fetchNdmaAlerts(place);
+      alerts =
+          await _fetchNdmaAlerts(
+        place,
+      );
     } catch (_) {
       alerts = const [];
     }
@@ -286,54 +309,83 @@ class OfficialDataService {
     return OfficialDataBundle(
       observation: observation,
       alerts: alerts,
-      observationStatus: observationStatus,
+      observationStatus:
+          observationStatus,
       fetchedAt: DateTime.now(),
     );
   }
 
-  static Future<(OfficialObservation?, String)>
+  static Future<
+          (
+            OfficialObservation?,
+            String
+          )>
       _fetchImdObservation(
     PlaceInfo place,
   ) async {
-    if (imdAuthHeaderName.trim().isEmpty ||
-        imdAuthHeaderValue.trim().isEmpty) {
+    if (imdAuthHeaderName
+            .trim()
+            .isEmpty ||
+        imdAuthHeaderValue
+            .trim()
+            .isEmpty) {
       return (
         null,
-        'IMD official observation requires API authentication. '
-            'The app will never fabricate an IMD reading.'
+        'IMD official observation requires '
+            'API authentication. '
+            'The app will never fabricate '
+            'an IMD reading.'
       );
     }
 
-    final response = await http
-        .get(
-          Uri.parse(_imdCurrentWeatherUrl),
-          headers: {
-            imdAuthHeaderName: imdAuthHeaderValue,
-            'Accept': 'application/json',
-          },
-        )
-        .timeout(
-          const Duration(seconds: 15),
-        );
+    final response =
+        await http
+            .get(
+              Uri.parse(
+                _imdCurrentWeatherUrl,
+              ),
+              headers: {
+                imdAuthHeaderName:
+                    imdAuthHeaderValue,
+                'Accept':
+                    'application/json',
+              },
+            )
+            .timeout(
+              const Duration(
+                seconds: 15,
+              ),
+            );
 
     if (response.statusCode != 200) {
       return (
         null,
-        'IMD API returned HTTP ${response.statusCode}.'
+        'IMD API returned HTTP '
+            '${response.statusCode}.'
       );
     }
 
-    final decoded = jsonDecode(response.body);
+    final decoded =
+        jsonDecode(
+      response.body,
+    );
 
-    final rows = <Map<String, dynamic>>[];
+    final rows =
+        <Map<String, dynamic>>[];
 
     if (decoded is List) {
       for (final item in decoded) {
         if (item is Map) {
           rows.add(
             item.map(
-              (key, value) =>
-                  MapEntry(key.toString(), value),
+              (
+                key,
+                value,
+              ) =>
+                  MapEntry(
+                key.toString(),
+                value,
+              ),
             ),
           );
         }
@@ -341,16 +393,23 @@ class OfficialDataService {
     } else if (decoded is Map) {
       final dynamic possibleData =
           decoded['data'] ??
-          decoded['result'] ??
-          decoded['records'];
+              decoded['result'] ??
+              decoded['records'];
 
       if (possibleData is List) {
-        for (final item in possibleData) {
+        for (final item
+            in possibleData) {
           if (item is Map) {
             rows.add(
               item.map(
-                (key, value) =>
-                    MapEntry(key.toString(), value),
+                (
+                  key,
+                  value,
+                ) =>
+                    MapEntry(
+                  key.toString(),
+                  value,
+                ),
               ),
             );
           }
@@ -358,8 +417,14 @@ class OfficialDataService {
       } else {
         rows.add(
           decoded.map(
-            (key, value) =>
-                MapEntry(key.toString(), value),
+            (
+              key,
+              value,
+            ) =>
+                MapEntry(
+              key.toString(),
+              value,
+            ),
           ),
         );
       }
@@ -368,24 +433,36 @@ class OfficialDataService {
     if (rows.isEmpty) {
       return (
         null,
-        'IMD returned no current-weather records.'
+        'IMD returned no '
+            'current-weather records.'
       );
     }
 
-    Map<String, dynamic>? selected;
+    Map<String, dynamic>?
+        selected;
 
-    final placeTokens = <String>[
+    final placeTokens =
+        <String>[
       place.name,
       place.district,
     ]
-        .where((value) => value.trim().isNotEmpty)
-        .map((value) => value.toLowerCase())
-        .toList();
+            .where(
+              (value) =>
+                  value
+                      .trim()
+                      .isNotEmpty,
+            )
+            .map(
+              (value) =>
+                  value.toLowerCase(),
+            )
+            .toList();
 
     int bestScore = -1;
 
     for (final row in rows) {
-      final station = _stringValue(
+      final station =
+          _stringValue(
         row,
         const [
           'Station',
@@ -397,14 +474,26 @@ class OfficialDataService {
 
       var score = 0;
 
-      for (final token in placeTokens) {
-        if (station.contains(token) ||
-            token.contains(station)) {
+      for (final token
+          in placeTokens) {
+        if (station.contains(
+              token,
+            ) ||
+            token.contains(
+              station,
+            )) {
           score += 5;
         } else {
-          for (final part in token.split(RegExp(r'\s+'))) {
+          for (final part
+              in token.split(
+            RegExp(
+              r'\s+',
+            ),
+          )) {
             if (part.length >= 4 &&
-                station.contains(part)) {
+                station.contains(
+                  part,
+                )) {
               score += 1;
             }
           }
@@ -419,7 +508,8 @@ class OfficialDataService {
 
     selected ??= rows.first;
 
-    final station = _stringValue(
+    final station =
+        _stringValue(
       selected,
       const [
         'Station',
@@ -429,7 +519,8 @@ class OfficialDataService {
       ],
     );
 
-    final dateText = _stringValue(
+    final dateText =
+        _stringValue(
       selected,
       const [
         'Date of Observation',
@@ -439,7 +530,8 @@ class OfficialDataService {
       ],
     );
 
-    final timeText = _stringValue(
+    final timeText =
+        _stringValue(
       selected,
       const [
         'Time of Observation',
@@ -453,19 +545,30 @@ class OfficialDataService {
 
     if (dateText.isNotEmpty) {
       final candidate =
-          '${dateText.trim()} ${timeText.trim()}'.trim();
+          '${dateText.trim()} '
+                  '${timeText.trim()}'
+              .trim();
 
       observedAt =
-          DateTime.tryParse(candidate) ??
-          DateTime.tryParse(dateText.trim());
+          DateTime.tryParse(
+                candidate,
+              ) ??
+              DateTime.tryParse(
+                dateText.trim(),
+              );
     }
 
-    final observation = OfficialObservation(
-      source: 'India Meteorological Department (IMD)',
+    final observation =
+        OfficialObservation(
+      source:
+          'India Meteorological Department (IMD)',
       station:
-          station.isEmpty ? 'IMD reporting station' : station,
+          station.isEmpty
+              ? 'IMD reporting station'
+              : station,
       observedAt: observedAt,
-      temperature: _numberValue(
+      temperature:
+          _numberValue(
         selected,
         const [
           'Temperature',
@@ -474,7 +577,8 @@ class OfficialDataService {
           'temp',
         ],
       ),
-      humidity: _numberValue(
+      humidity:
+          _numberValue(
         selected,
         const [
           'Humidity',
@@ -482,7 +586,8 @@ class OfficialDataService {
           'RH',
         ],
       ),
-      windSpeed: _numberValue(
+      windSpeed:
+          _numberValue(
         selected,
         const [
           'Wind Speed',
@@ -490,7 +595,8 @@ class OfficialDataService {
           'WindSpeed',
         ],
       ),
-      rainfall24h: _numberValue(
+      rainfall24h:
+          _numberValue(
         selected,
         const [
           'Last 24 hrs Rainfall',
@@ -507,106 +613,179 @@ class OfficialDataService {
     );
   }
 
-  static Future<List<OfficialAlert>> _fetchNdmaAlerts(
+  static Future<
+          List<OfficialAlert>>
+      _fetchNdmaAlerts(
     PlaceInfo place,
   ) async {
-    final response = await http
-        .get(
-          Uri.parse(_ndmaRssUrl),
-          headers: const {
-            'Accept':
-                'application/rss+xml, application/xml, text/xml',
-            'User-Agent': 'HimRakshakAI/1.2',
-          },
-        )
-        .timeout(
-          const Duration(seconds: 15),
-        );
+    final response =
+        await http
+            .get(
+              Uri.parse(
+                _ndmaRssUrl,
+              ),
+              headers:
+                  const {
+                'Accept':
+                    'application/rss+xml, '
+                    'application/xml, '
+                    'text/xml',
+                'User-Agent':
+                    'HimRakshakAI/1.2',
+              },
+            )
+            .timeout(
+              const Duration(
+                seconds: 15,
+              ),
+            );
 
-    if (response.statusCode != 200) {
+    if (response.statusCode !=
+        200) {
       return const [];
     }
 
     final document =
-        XmlDocument.parse(response.body);
+        XmlDocument.parse(
+      response.body,
+    );
 
-    final searchTokens = <String>[
+    final searchTokens =
+        <String>[
       place.name,
       place.district,
       place.state,
       'Uttarakhand',
     ]
-        .where((value) => value.trim().isNotEmpty)
-        .map((value) => value.toLowerCase())
-        .toSet();
+            .where(
+              (value) =>
+                  value
+                      .trim()
+                      .isNotEmpty,
+            )
+            .map(
+              (value) =>
+                  value.toLowerCase(),
+            )
+            .toSet();
 
-    final alerts = <OfficialAlert>[];
+    final alerts =
+        <OfficialAlert>[];
 
     for (final item
-        in document.findAllElements('item')) {
+        in document
+            .findAllElements(
+          'item',
+        )) {
       final title =
-          item.getElement('title')?.innerText.trim() ??
-          '';
+          item
+                  .getElement(
+                    'title',
+                  )
+                  ?.innerText
+                  .trim() ??
+              '';
 
       final description =
-          item.getElement('description')?.innerText.trim() ??
-          '';
+          item
+                  .getElement(
+                    'description',
+                  )
+                  ?.innerText
+                  .trim() ??
+              '';
 
       final link =
-          item.getElement('link')?.innerText.trim() ??
-          '';
+          item
+                  .getElement(
+                    'link',
+                  )
+                  ?.innerText
+                  .trim() ??
+              '';
 
       final pubDate =
-          item.getElement('pubDate')?.innerText.trim() ??
-          '';
+          item
+                  .getElement(
+                    'pubDate',
+                  )
+                  ?.innerText
+                  .trim() ??
+              '';
 
       final combined =
-          '$title $description'.toLowerCase();
+          '$title $description'
+              .toLowerCase();
 
       final matches =
-          searchTokens.any(combined.contains);
+          searchTokens.any(
+        combined.contains,
+      );
 
       if (!matches) {
         continue;
       }
 
       final severity =
-          _inferSeverity('$title $description');
+          _inferSeverity(
+        '$title $description',
+      );
 
       alerts.add(
         OfficialAlert(
           source:
               'NDMA SACHET / issuing authority',
           title:
-              title.isEmpty ? 'Official alert' : title,
-          description: description,
-          severity: severity,
+              title.isEmpty
+                  ? 'Official alert'
+                  : title,
+          description:
+              description,
+          severity:
+              severity,
           issuedAt:
-              DateTime.tryParse(pubDate),
+              DateTime.tryParse(
+            pubDate,
+          ),
           link: link,
         ),
       );
     }
 
-    return alerts.take(8).toList();
+    return alerts
+        .take(
+          8,
+        )
+        .toList();
   }
 
   static String _inferSeverity(
     String text,
   ) {
-    final value = text.toLowerCase();
+    final value =
+        text.toLowerCase();
 
-    if (value.contains('red') ||
-        value.contains('extreme') ||
-        value.contains('severe')) {
+    if (value.contains(
+          'red',
+        ) ||
+        value.contains(
+          'extreme',
+        ) ||
+        value.contains(
+          'severe',
+        )) {
       return 'Severe';
     }
 
-    if (value.contains('orange')) {
+    if (value.contains(
+      'orange',
+    )) {
       return 'Orange';
     }
 
-    if (value.contains('yellow')) {
+    if (value.contains(
+      'yellow',
+    )) {
       return 'Yellow';
     }
 
@@ -621,8 +800,13 @@ class OfficialDataService {
       final value = row[key];
 
       if (value != null &&
-          value.toString().trim().isNotEmpty) {
-        return value.toString().trim();
+          value
+              .toString()
+              .trim()
+              .isNotEmpty) {
+        return value
+            .toString()
+            .trim();
       }
     }
 
@@ -642,9 +826,15 @@ class OfficialDataService {
 
       final parsed =
           double.tryParse(
-            value?.toString().replaceAll(',', '').trim() ??
-                '',
-          );
+        value
+                ?.toString()
+                .replaceAll(
+                  ',',
+                  '',
+                )
+                .trim() ??
+            '',
+      );
 
       if (parsed != null) {
         return parsed;
@@ -660,8 +850,6 @@ enum HimRakshakMapMode {
   hybrid,
   terrain,
 }
-
-
 class LocationApi {
   static const headers = {
     'User-Agent':
@@ -1313,8 +1501,7 @@ class _DashboardPageState
     30.0668,
     79.0193,
   );
-
-  static const int
+    static const int
       criticalRisk = 70;
 
   final MapController
@@ -1482,12 +1669,12 @@ class _DashboardPageState
       }
 
       final position =
-    await Geolocator.getCurrentPosition(
-  locationSettings:
-      const LocationSettings(
-    accuracy: LocationAccuracy.high,
-  ),
-);
+          await Geolocator.getCurrentPosition(
+        locationSettings:
+            const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
 
       final point =
           LatLng(
@@ -1566,16 +1753,24 @@ class _DashboardPageState
         },
       );
 
-      final results = await Future.wait<dynamic>([
-        WeatherRiskService.fetch(place),
-        OfficialDataService.fetch(place),
-      ]);
+      final results =
+          await Future.wait<dynamic>(
+        [
+          WeatherRiskService.fetch(
+            place,
+          ),
+          OfficialDataService.fetch(
+            place,
+          ),
+        ],
+      );
 
       final snapshot =
           results[0] as RiskSnapshot;
 
       final official =
-          results[1] as OfficialDataBundle;
+          results[1]
+              as OfficialDataBundle;
 
       if (!mounted) {
         return;
@@ -1615,16 +1810,24 @@ class _DashboardPageState
     PlaceInfo place,
   ) async {
     try {
-      final results = await Future.wait<dynamic>([
-        WeatherRiskService.fetch(place),
-        OfficialDataService.fetch(place),
-      ]);
+      final results =
+          await Future.wait<dynamic>(
+        [
+          WeatherRiskService.fetch(
+            place,
+          ),
+          OfficialDataService.fetch(
+            place,
+          ),
+        ],
+      );
 
       final snapshot =
           results[0] as RiskSnapshot;
 
       final official =
-          results[1] as OfficialDataBundle;
+          results[1]
+              as OfficialDataBundle;
 
       if (!mounted) {
         return;
@@ -1891,16 +2094,24 @@ class _DashboardPageState
     );
 
     try {
-      final results = await Future.wait<dynamic>([
-        WeatherRiskService.fetch(selected),
-        OfficialDataService.fetch(selected),
-      ]);
+      final results =
+          await Future.wait<dynamic>(
+        [
+          WeatherRiskService.fetch(
+            selected,
+          ),
+          OfficialDataService.fetch(
+            selected,
+          ),
+        ],
+      );
 
       final snapshot =
           results[0] as RiskSnapshot;
 
       final official =
-          results[1] as OfficialDataBundle;
+          results[1]
+              as OfficialDataBundle;
 
       if (!mounted) {
         return;
@@ -1935,7 +2146,8 @@ class _DashboardPageState
     }
   }
 
-  Future<void> _showUttarakhand() async {
+  Future<void>
+      _showUttarakhand() async {
     await _moveMap(
       uttarakhandCenter,
       7.3,
@@ -1946,19 +2158,24 @@ class _DashboardPageState
     LatLng point,
     double zoom,
   ) async {
-    if (mapboxAccessToken.trim().isNotEmpty &&
+    if (mapboxAccessToken
+            .trim()
+            .isNotEmpty &&
         _mapboxMap != null) {
       await _mapboxMap!.setCamera(
         mbx.CameraOptions(
           center: mbx.Point(
-            coordinates: mbx.Position(
+            coordinates:
+                mbx.Position(
               point.longitude,
               point.latitude,
             ),
           ),
           zoom: zoom,
           pitch:
-              _mapMode == HimRakshakMapMode.terrain
+              _mapMode ==
+                      HimRakshakMapMode
+                          .terrain
                   ? 55
                   : 0,
         ),
@@ -1985,7 +2202,8 @@ class _DashboardPageState
     await _syncMapboxMarkers();
   }
 
-  Future<void> _syncMapboxMarkers() async {
+  Future<void>
+      _syncMapboxMarkers() async {
     final manager =
         _circleAnnotationManager;
 
@@ -1998,44 +2216,59 @@ class _DashboardPageState
     if (_userPosition != null) {
       await manager.create(
         mbx.CircleAnnotationOptions(
-          geometry: mbx.Point(
-            coordinates: mbx.Position(
-              _userPosition!.longitude,
-              _userPosition!.latitude,
+          geometry:
+              mbx.Point(
+            coordinates:
+                mbx.Position(
+              _userPosition!
+                  .longitude,
+              _userPosition!
+                  .latitude,
             ),
           ),
           circleRadius: 9,
-          circleColor: 0xFF1976D2,
-          circleStrokeColor: 0xFFFFFFFF,
+          circleColor:
+              0xFF1976D2,
+          circleStrokeColor:
+              0xFFFFFFFF,
           circleStrokeWidth: 3,
         ),
       );
     }
 
-    if (_selectedPosition != null &&
-        _selectedPosition != _userPosition) {
+    if (_selectedPosition !=
+            null &&
+        _selectedPosition !=
+            _userPosition) {
       final risk =
           _snapshot?.overallRisk;
 
-      final color = risk == null
-          ? 0xFFFF9800
-          : risk >= criticalRisk
-              ? 0xFFD32F2F
-              : risk >= 40
-                  ? 0xFFF57C00
-                  : 0xFF2E7D32;
+      final color =
+          risk == null
+              ? 0xFFFF9800
+              : risk >=
+                      criticalRisk
+                  ? 0xFFD32F2F
+                  : risk >= 40
+                      ? 0xFFF57C00
+                      : 0xFF2E7D32;
 
       await manager.create(
         mbx.CircleAnnotationOptions(
-          geometry: mbx.Point(
-            coordinates: mbx.Position(
-              _selectedPosition!.longitude,
-              _selectedPosition!.latitude,
+          geometry:
+              mbx.Point(
+            coordinates:
+                mbx.Position(
+              _selectedPosition!
+                  .longitude,
+              _selectedPosition!
+                  .latitude,
             ),
           ),
           circleRadius: 9,
           circleColor: color,
-          circleStrokeColor: 0xFFFFFFFF,
+          circleStrokeColor:
+              0xFFFFFFFF,
           circleStrokeWidth: 3,
         ),
       );
@@ -2044,23 +2277,37 @@ class _DashboardPageState
 
   String _mapboxStyle() {
     switch (_mapMode) {
-      case HimRakshakMapMode.satellite:
-        return mbx.MapboxStyles.SATELLITE;
-      case HimRakshakMapMode.hybrid:
-        return mbx.MapboxStyles.STANDARD_SATELLITE;
-      case HimRakshakMapMode.terrain:
-        return mbx.MapboxStyles.STANDARD;
+      case HimRakshakMapMode
+          .satellite:
+        return mbx
+            .MapboxStyles
+            .SATELLITE;
+
+      case HimRakshakMapMode
+          .hybrid:
+        return mbx
+            .MapboxStyles
+            .STANDARD_SATELLITE;
+
+      case HimRakshakMapMode
+          .terrain:
+        return mbx
+            .MapboxStyles
+            .STANDARD;
     }
   }
 
   Future<void> _changeMapMode(
     HimRakshakMapMode mode,
   ) async {
-    setState(() {
-      _mapMode = mode;
-    });
+    setState(
+      () {
+        _mapMode = mode;
+      },
+    );
 
-    final map = _mapboxMap;
+    final map =
+        _mapboxMap;
 
     if (map != null) {
       await map.loadStyleURI(
@@ -2069,12 +2316,14 @@ class _DashboardPageState
 
       final selected =
           _selectedPosition ??
-          _userPosition ??
-          uttarakhandCenter;
+              _userPosition ??
+              uttarakhandCenter;
 
       await _moveMap(
         selected,
-        mode == HimRakshakMapMode.terrain
+        mode ==
+                HimRakshakMapMode
+                    .terrain
             ? 11
             : 13,
       );
@@ -2109,9 +2358,8 @@ class _DashboardPageState
     }
 
     return 'Low';
-  }
-
-  @override
+  }  
+      @override
   Widget build(
     BuildContext context,
   ) {
@@ -2207,13 +2455,20 @@ class _DashboardPageState
                 ),
               ),
             ),
+
+            // =========================
+            // MAP SECTION
+            // =========================
             Expanded(
               flex: 6,
               child: Stack(
                 children: [
-                  if (mapboxAccessToken.trim().isNotEmpty)
+                  if (mapboxAccessToken
+                      .trim()
+                      .isNotEmpty)
                     mbx.MapWidget(
-                      key: const ValueKey(
+                      key:
+                          const ValueKey(
                         'himrakshak-mapbox',
                       ),
                       styleUri:
@@ -2224,14 +2479,17 @@ class _DashboardPageState
                             mbx.Point(
                           coordinates:
                               mbx.Position(
-                            uttarakhandCenter.longitude,
-                            uttarakhandCenter.latitude,
+                            uttarakhandCenter
+                                .longitude,
+                            uttarakhandCenter
+                                .latitude,
                           ),
                         ),
                         zoom: 7.3,
                         pitch:
                             _mapMode ==
-                                    HimRakshakMapMode.terrain
+                                    HimRakshakMapMode
+                                        .terrain
                                 ? 55
                                 : 0,
                       ),
@@ -2246,8 +2504,10 @@ class _DashboardPageState
 
                         _analysePoint(
                           LatLng(
-                            coordinates.lat.toDouble(),
-                            coordinates.lng.toDouble(),
+                            coordinates.lat
+                                .toDouble(),
+                            coordinates.lng
+                                .toDouble(),
                           ),
                         );
                       },
@@ -2292,9 +2552,11 @@ class _DashboardPageState
                                 height: 52,
                                 child:
                                     const Icon(
-                                  Icons.person_pin_circle,
+                                  Icons
+                                      .person_pin_circle,
                                   size: 48,
-                                  color: Colors.blue,
+                                  color:
+                                      Colors.blue,
                                 ),
                               ),
                             if (_selectedPosition !=
@@ -2308,15 +2570,18 @@ class _DashboardPageState
                                 height: 52,
                                 child:
                                     Icon(
-                                  Icons.location_on,
+                                  Icons
+                                      .location_on,
                                   size: 48,
-                                  color: snapshot ==
-                                          null
-                                      ? Colors.orange
-                                      : _riskColor(
-                                          snapshot
-                                              .overallRisk,
-                                        ),
+                                  color:
+                                      snapshot ==
+                                              null
+                                          ? Colors
+                                              .orange
+                                          : _riskColor(
+                                              snapshot
+                                                  .overallRisk,
+                                            ),
                                 ),
                               ),
                           ],
@@ -2331,88 +2596,105 @@ class _DashboardPageState
                         ),
                       ],
                     ),
+
+                  // =========================
+                  // MAP TYPE SELECTOR
+                  // =========================
                   Positioned(
                     top: 10,
                     right: 10,
                     child: Card(
                       child: Padding(
                         padding:
-                            const EdgeInsets.all(6),
-                        child: mapboxAccessToken
-                                .trim()
-                                .isNotEmpty
-                            ? PopupMenuButton<
-                                HimRakshakMapMode>(
-                                tooltip:
-                                    'Map style',
-                                initialValue:
-                                    _mapMode,
-                                onSelected:
-                                    _changeMapMode,
-                                itemBuilder:
-                                    (context) =>
-                                        const [
-                                  PopupMenuItem(
-                                    value:
-                                        HimRakshakMapMode
-                                            .satellite,
+                            const EdgeInsets
+                                .all(
+                          6,
+                        ),
+                        child:
+                            mapboxAccessToken
+                                    .trim()
+                                    .isNotEmpty
+                                ? PopupMenuButton<
+                                    HimRakshakMapMode>(
+                                    tooltip:
+                                        'Map style',
+                                    initialValue:
+                                        _mapMode,
+                                    onSelected:
+                                        _changeMapMode,
+                                    itemBuilder:
+                                        (context) =>
+                                            const [
+                                      PopupMenuItem(
+                                        value:
+                                            HimRakshakMapMode
+                                                .satellite,
+                                        child:
+                                            Text(
+                                          'Satellite',
+                                        ),
+                                      ),
+                                      PopupMenuItem(
+                                        value:
+                                            HimRakshakMapMode
+                                                .hybrid,
+                                        child:
+                                            Text(
+                                          'Hybrid',
+                                        ),
+                                      ),
+                                      PopupMenuItem(
+                                        value:
+                                            HimRakshakMapMode
+                                                .terrain,
+                                        child:
+                                            Text(
+                                          'Terrain / 3D',
+                                        ),
+                                      ),
+                                    ],
+                                    child:
+                                        const Row(
+                                      mainAxisSize:
+                                          MainAxisSize
+                                              .min,
+                                      children: [
+                                        Icon(
+                                          Icons
+                                              .layers_outlined,
+                                        ),
+                                        SizedBox(
+                                          width: 6,
+                                        ),
+                                        Text(
+                                          'Map',
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                : const Padding(
+                                    padding:
+                                        EdgeInsets
+                                            .symmetric(
+                                      horizontal:
+                                          6,
+                                      vertical:
+                                          4,
+                                    ),
                                     child:
                                         Text(
-                                      'Satellite',
+                                      'OSM fallback',
+                                      style:
+                                          TextStyle(
+                                        fontSize:
+                                            11,
+                                      ),
                                     ),
                                   ),
-                                  PopupMenuItem(
-                                    value:
-                                        HimRakshakMapMode
-                                            .hybrid,
-                                    child:
-                                        Text(
-                                      'Hybrid',
-                                    ),
-                                  ),
-                                  PopupMenuItem(
-                                    value:
-                                        HimRakshakMapMode
-                                            .terrain,
-                                    child:
-                                        Text(
-                                      'Terrain / 3D',
-                                    ),
-                                  ),
-                                ],
-                                child: const Row(
-                                  mainAxisSize:
-                                      MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.layers_outlined,
-                                    ),
-                                    SizedBox(
-                                      width: 6,
-                                    ),
-                                    Text(
-                                      'Map',
-                                    ),
-                                  ],
-                                ),
-                              )
-                            : const Padding(
-                                padding:
-                                    EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 4,
-                                ),
-                                child: Text(
-                                  'OSM fallback',
-                                  style:
-                                      TextStyle(
-                                    fontSize: 11,
-                                  ),
-                                ),
-                              ),
                       ),
                     ),
                   ),
+
                   if (_loading)
                     const Positioned(
                       top: 0,
@@ -2424,12 +2706,17 @@ class _DashboardPageState
                 ],
               ),
             ),
+
+            // =========================
+            // INFORMATION SECTION
+            // =========================
             Expanded(
               flex: 5,
               child:
                   SingleChildScrollView(
                 padding:
-                    const EdgeInsets.all(
+                    const EdgeInsets
+                        .all(
                   14,
                 ),
                 child: Column(
@@ -2437,7 +2724,8 @@ class _DashboardPageState
                       CrossAxisAlignment
                           .stretch,
                   children: [
-                    if (_error != null)
+                    if (_error !=
+                        null)
                       Card(
                         child:
                             Padding(
@@ -2457,6 +2745,10 @@ class _DashboardPageState
                           ),
                         ),
                       ),
+
+                    // =========================
+                    // CRITICAL WARNING
+                    // =========================
                     if (snapshot !=
                             null &&
                         snapshot
@@ -2495,7 +2787,8 @@ class _DashboardPageState
                                     color:
                                         Colors.red,
                                     fontWeight:
-                                        FontWeight.bold,
+                                        FontWeight
+                                            .bold,
                                   ),
                                 ),
                               ),
@@ -2503,6 +2796,7 @@ class _DashboardPageState
                           ),
                         ),
                       ),
+
                     Text(
                       _selectedPlace
                               ?.name ??
@@ -2510,9 +2804,11 @@ class _DashboardPageState
                       style:
                           Theme.of(
                         context,
-                      ).textTheme
+                      )
+                              .textTheme
                               .titleLarge,
                     ),
+
                     if ((_selectedPlace
                                 ?.subtitle ??
                             '')
@@ -2521,24 +2817,35 @@ class _DashboardPageState
                         _selectedPlace!
                             .subtitle,
                       ),
+
                     const SizedBox(
                       height: 12,
                     ),
-                    if (_officialData != null) ...[
+
+                    // =========================
+                    // OFFICIAL OBSERVATION
+                    // =========================
+                    if (_officialData !=
+                        null) ...[
                       Card(
-                        child: Padding(
+                        child:
+                            Padding(
                           padding:
-                              const EdgeInsets.all(
+                              const EdgeInsets
+                                  .all(
                             14,
                           ),
-                          child: Column(
+                          child:
+                              Column(
                             crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                                CrossAxisAlignment
+                                    .start,
                             children: [
                               const Row(
                                 children: [
                                   Icon(
-                                    Icons.verified_outlined,
+                                    Icons
+                                        .verified_outlined,
                                   ),
                                   SizedBox(
                                     width: 8,
@@ -2548,15 +2855,19 @@ class _DashboardPageState
                                     style:
                                         TextStyle(
                                       fontWeight:
-                                          FontWeight.bold,
-                                      fontSize: 16,
+                                          FontWeight
+                                              .bold,
+                                      fontSize:
+                                          16,
                                     ),
                                   ),
                                 ],
                               ),
+
                               const SizedBox(
                                 height: 10,
                               ),
+
                               if (_officialData!
                                       .observation !=
                                   null) ...[
@@ -2567,13 +2878,20 @@ class _DashboardPageState
                                   style:
                                       const TextStyle(
                                     fontWeight:
-                                        FontWeight.bold,
+                                        FontWeight
+                                            .bold,
                                   ),
                                 ),
+
+                                const SizedBox(
+                                  height: 4,
+                                ),
+
                                 Text(
                                   'Station: '
                                   '${_officialData!.observation!.station}',
                                 ),
+
                                 if (_officialData!
                                         .observation!
                                         .observedAt !=
@@ -2582,24 +2900,28 @@ class _DashboardPageState
                                     'Observed: '
                                     '${_formatTime(_officialData!.observation!.observedAt!)}',
                                   ),
+
                                 const SizedBox(
                                   height: 10,
                                 ),
+
                                 Row(
                                   children: [
                                     Expanded(
-                                      child: _metric(
+                                      child:
+                                          _metric(
                                         'Temperature',
                                         _formatMetric(
                                           _officialData!
                                               .observation!
                                               .temperature,
-                                          '掳C',
+                                          '°C',
                                         ),
                                       ),
                                     ),
                                     Expanded(
-                                      child: _metric(
+                                      child:
+                                          _metric(
                                         'Humidity',
                                         _formatMetric(
                                           _officialData!
@@ -2611,11 +2933,14 @@ class _DashboardPageState
                                     ),
                                   ],
                                 ),
+
                                 const Divider(),
+
                                 Row(
                                   children: [
                                     Expanded(
-                                      child: _metric(
+                                      child:
+                                          _metric(
                                         'Wind',
                                         _formatMetric(
                                           _officialData!
@@ -2626,7 +2951,8 @@ class _DashboardPageState
                                       ),
                                     ),
                                     Expanded(
-                                      child: _metric(
+                                      child:
+                                          _metric(
                                         'Rain 24h',
                                         _formatMetric(
                                           _officialData!
@@ -2644,98 +2970,134 @@ class _DashboardPageState
                                       .observationStatus,
                                   style:
                                       const TextStyle(
-                                    fontSize: 12,
+                                    fontSize:
+                                        12,
                                   ),
                                 ),
+
                               const SizedBox(
                                 height: 8,
                               ),
+
                               Text(
                                 'Fetched: '
                                 '${_formatTime(_officialData!.fetchedAt)}',
                                 style:
                                     const TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey,
+                                  fontSize:
+                                      11,
+                                  color:
+                                      Colors.grey,
                                 ),
                               ),
                             ],
                           ),
                         ),
                       ),
+
+                      // =========================
+                      // NDMA SACHET ALERTS
+                      // =========================
                       Card(
-                        child: Padding(
+                        child:
+                            Padding(
                           padding:
-                              const EdgeInsets.all(
+                              const EdgeInsets
+                                  .all(
                             14,
                           ),
-                          child: Column(
+                          child:
+                              Column(
                             crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                                CrossAxisAlignment
+                                    .start,
                             children: [
                               const Row(
                                 children: [
                                   Icon(
-                                    Icons.warning_amber_rounded,
+                                    Icons
+                                        .warning_amber_rounded,
                                   ),
                                   SizedBox(
                                     width: 8,
                                   ),
-                                  Text(
-                                    'Official Alerts 鈥� NDMA SACHET',
-                                    style:
-                                        TextStyle(
-                                      fontWeight:
-                                          FontWeight.bold,
-                                      fontSize: 16,
+                                  Expanded(
+                                    child:
+                                        Text(
+                                      'Official Alerts — NDMA SACHET',
+                                      style:
+                                          TextStyle(
+                                        fontWeight:
+                                            FontWeight
+                                                .bold,
+                                        fontSize:
+                                            16,
+                                      ),
                                     ),
                                   ),
                                 ],
                               ),
+
                               const SizedBox(
                                 height: 8,
                               ),
+
                               if (_officialData!
                                   .alerts
                                   .isEmpty)
                                 const Text(
-                                  'No matching live SACHET alert was found for this place/district in the current feed.',
+                                  'No matching live SACHET alert was found '
+                                  'for this place/district in the current feed.',
                                   style:
                                       TextStyle(
-                                    fontSize: 12,
+                                    fontSize:
+                                        12,
                                   ),
                                 )
                               else
                                 ..._officialData!
                                     .alerts
                                     .map(
-                                  (alert) =>
+                                  (
+                                    alert,
+                                  ) =>
                                       Padding(
                                     padding:
-                                        const EdgeInsets.only(
-                                      bottom: 10,
+                                        const EdgeInsets
+                                            .only(
+                                      bottom:
+                                          10,
                                     ),
-                                    child: Column(
+                                    child:
+                                        Column(
                                       crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                          CrossAxisAlignment
+                                              .start,
                                       children: [
                                         Text(
-                                          '${alert.severity}: ${alert.title}',
+                                          '${alert.severity}: '
+                                          '${alert.title}',
                                           style:
                                               const TextStyle(
                                             fontWeight:
-                                                FontWeight.bold,
+                                                FontWeight
+                                                    .bold,
                                           ),
                                         ),
+
                                         if (alert
                                             .description
                                             .isNotEmpty)
                                           Text(
-                                            alert.description,
-                                            maxLines: 4,
+                                            alert
+                                                .description,
+                                            maxLines:
+                                                4,
                                             overflow:
-                                                TextOverflow.ellipsis,
+                                                TextOverflow
+                                                    .ellipsis,
                                           ),
+
                                         if (alert
                                                 .issuedAt !=
                                             null)
@@ -2744,18 +3106,24 @@ class _DashboardPageState
                                             '${_formatTime(alert.issuedAt!)}',
                                             style:
                                                 const TextStyle(
-                                              fontSize: 11,
+                                              fontSize:
+                                                  11,
                                               color:
-                                                  Colors.grey,
+                                                  Colors
+                                                      .grey,
                                             ),
                                           ),
+
                                         Text(
-                                          'Source: ${alert.source}',
+                                          'Source: '
+                                          '${alert.source}',
                                           style:
                                               const TextStyle(
-                                            fontSize: 11,
+                                            fontSize:
+                                                11,
                                             color:
-                                                Colors.grey,
+                                                Colors
+                                                    .grey,
                                           ),
                                         ),
                                       ],
@@ -2767,7 +3135,7 @@ class _DashboardPageState
                         ),
                       ),
                     ],
-                    if (snapshot !=
+                                          if (snapshot !=
                         null) ...[
                       Card(
                         child:
@@ -2824,6 +3192,10 @@ class _DashboardPageState
                           ),
                         ),
                       ),
+
+                      // =========================
+                      // ENVIRONMENTAL INPUTS
+                      // =========================
                       Card(
                         child:
                             Padding(
@@ -2841,7 +3213,7 @@ class _DashboardPageState
                                     child:
                                         _metric(
                                       'Temperature',
-                                      '${snapshot.temperature.toStringAsFixed(1)} 掳C',
+                                      '${snapshot.temperature.toStringAsFixed(1)} °C',
                                     ),
                                   ),
                                   Expanded(
@@ -2853,7 +3225,9 @@ class _DashboardPageState
                                   ),
                                 ],
                               ),
+
                               const Divider(),
+
                               Row(
                                 children: [
                                   Expanded(
@@ -2872,7 +3246,9 @@ class _DashboardPageState
                                   ),
                                 ],
                               ),
+
                               const Divider(),
+
                               Row(
                                 children: [
                                   Expanded(
@@ -2899,51 +3275,81 @@ class _DashboardPageState
                           ),
                         ),
                       ),
+
+                      // =========================
+                      // EXPLAINABLE RISK
+                      // =========================
                       Card(
-                        child: Padding(
+                        child:
+                            Padding(
                           padding:
-                              const EdgeInsets.all(
+                              const EdgeInsets
+                                  .all(
                             14,
                           ),
-                          child: Column(
+                          child:
+                              Column(
                             crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                                CrossAxisAlignment
+                                    .start,
                             children: [
                               const Text(
                                 'Why is this score high?',
                                 style:
                                     TextStyle(
                                   fontWeight:
-                                      FontWeight.bold,
-                                  fontSize: 16,
+                                      FontWeight
+                                          .bold,
+                                  fontSize:
+                                      16,
                                 ),
                               ),
+
                               const SizedBox(
                                 height: 6,
                               ),
+
                               Text(
-                                _riskReason(snapshot),
+                                _riskReason(
+                                  snapshot,
+                                ),
                               ),
+
                               const SizedBox(
                                 height: 8,
                               ),
+
                               const Text(
-                                'Experimental inputs: Open-Meteo weather/model data + elevation. '
-                                'Weights: landslide = rain 45%, soil moisture 30%, elevation 20%, wind 5%; '
-                                'flood = rain 70%, soil moisture 20%, next-12h rain 10%.',
+                                'Experimental inputs: Open-Meteo '
+                                'weather/model data + elevation. '
+                                'Weights: landslide = rain 45%, '
+                                'soil moisture 30%, elevation 20%, '
+                                'wind 5%; flood = rain 70%, '
+                                'soil moisture 20%, next-12h rain 10%.',
                                 style:
                                     TextStyle(
-                                  fontSize: 12,
+                                  fontSize:
+                                      12,
                                 ),
                               ),
                             ],
                           ),
                         ),
                       ),
+
+                      const SizedBox(
+                        height: 6,
+                      ),
+
+                      // =========================
+                      // SAFETY DISCLAIMER
+                      // =========================
                       const Text(
                         'Experimental decision-support only. '
-                        'The 0鈥�100 HimRakshak score is not an official probability. '
-                        'Official observations and alerts are displayed separately above. '
+                        'The 0–100 HimRakshak score is not an '
+                        'official probability. '
+                        'Official observations and alerts are '
+                        'displayed separately above. '
                         'Always follow authorized agency alerts.',
                         style:
                             TextStyle(
@@ -2952,6 +3358,10 @@ class _DashboardPageState
                               FontStyle
                                   .italic,
                         ),
+                      ),
+
+                      const SizedBox(
+                        height: 16,
                       ),
                     ],
                   ],
@@ -2970,11 +3380,21 @@ class _DashboardPageState
     final local =
         value.toLocal();
 
-    String two(int number) =>
-        number.toString().padLeft(2, '0');
+    String two(
+      int number,
+    ) =>
+        number
+            .toString()
+            .padLeft(
+              2,
+              '0',
+            );
 
-    return '${two(local.day)}/${two(local.month)}/${local.year} '
-        '${two(local.hour)}:${two(local.minute)}';
+    return '${two(local.day)}/'
+        '${two(local.month)}/'
+        '${local.year} '
+        '${two(local.hour)}:'
+        '${two(local.minute)}';
   }
 
   String _formatMetric(
@@ -2991,35 +3411,46 @@ class _DashboardPageState
   String _riskReason(
     RiskSnapshot snapshot,
   ) {
-    final reasons = <String>[];
+    final reasons =
+        <String>[];
 
     if (snapshot.rainLast24h +
             snapshot.rainNext12h >=
         40) {
-      reasons.add('high recent/forecast rainfall');
+      reasons.add(
+        'high recent/forecast rainfall',
+      );
     }
 
     if (snapshot.soilMoisture >=
         0.30) {
-      reasons.add('wet near-surface soil');
+      reasons.add(
+        'wet near-surface soil',
+      );
     }
 
     if (snapshot.elevation >=
         1800) {
-      reasons.add('mountain/elevation exposure');
+      reasons.add(
+        'mountain/elevation exposure',
+      );
     }
 
     if (snapshot.windSpeed >=
         40) {
-      reasons.add('strong wind');
+      reasons.add(
+        'strong wind',
+      );
     }
 
     if (reasons.isEmpty) {
       return 'No single strong driver is dominating; '
-          'the score comes from the weighted combination of current inputs.';
+          'the score comes from the weighted '
+          'combination of current inputs.';
     }
 
-    return 'Main drivers: ${reasons.join(', ')}.';
+    return 'Main drivers: '
+        '${reasons.join(', ')}.';
   }
 
   Widget _metric(
