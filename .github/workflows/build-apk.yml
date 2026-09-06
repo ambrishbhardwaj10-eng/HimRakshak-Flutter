@@ -64,7 +64,7 @@ jobs:
               insert = (
                   "\n"
                   + "\n".join(
-                      " " + item
+                      "    " + item
                       for item in missing
                   )
                   + "\n"
@@ -103,7 +103,7 @@ jobs:
               gradle = gradle.replace(
                   "compileOptions {",
                   "compileOptions {\n"
-                  " "
+                  "        "
                   "isCoreLibraryDesugaringEnabled = true",
                   1,
               )
@@ -112,7 +112,7 @@ jobs:
               gradle = gradle.replace(
                   "defaultConfig {",
                   "defaultConfig {\n"
-                  " multiDexEnabled = true",
+                  "        multiDexEnabled = true",
                   1,
               )
 
@@ -125,7 +125,7 @@ jobs:
           if dependency not in gradle:
               gradle += (
                   "\n\ndependencies {\n"
-                  f" {dependency}\n"
+                  f"    {dependency}\n"
                   "}\n"
               )
 
