@@ -1,58 +1,330 @@
-#HimRakshak AI — Official Data Upgrade
+# HimRakshak AI
 
-This package is a drop-in replacement for the three files you shared.
+HimRakshak AI is an experimental mountain hazard
+decision-support application focused on Uttarakhand, India.
 
+The application combines environmental data,
+official alerts, location information and an
+experimental risk-calculation engine.
 
-Added
+> HimRakshak AI is not an official government
+> emergency-warning system.
 
+Users should always follow warnings and instructions
+issued by authorized government agencies.
 
-#NDMA SACHET official CAP/RSS alert feed integration.
+---
 
-#IMD official observation integration scaffold using the official Current Weather API.
+## Features
 
-#Clear separation between official observations/alerts and the experimental HimRakshak 0–100 score.
+### Current GPS Location
 
-Data timestamps / freshness labels.
+The application detects the user's current GPS
+location and displays it on the map.
 
-Explainable risk card ("Why is this score high?").
+Users can also:
 
-Optional Mapbox map upgrade:
-Satellite
-Hybrid (Mapbox Standard Satellite)
-Terrain / 3D
+- Search locations
+- Tap locations on the map
+- Analyse another place
+- Return to their current location
+- View Uttarakhand on the map
 
-Existing OSM map remains as a fallback if no Mapbox token is configured.
+---
 
-Existing GPS, search, map tap, risk calculation and local critical notifications are preserved.
+## Official Disaster Alerts
 
+HimRakshak integrates the NDMA SACHET public alert
+feed.
 
-#GitHub Actions secrets
+Official alerts are displayed separately from
+HimRakshak's experimental risk calculations.
 
-Create these repository secrets:
+Possible alerts include:
 
+- Heavy rainfall
+- Flood warnings
+- Landslide-related warnings
+- Severe weather
+- Other disaster alerts
 
+Source:
 
-#MAPBOX_ACCESS_TOKEN
+NDMA SACHET / authorized issuing agencies.
 
-Public Mapbox access token used by the mobile SDK.
+---
 
-IMD_AUTH_HEADER_NAME
+## IMD Official Observations
 
+The application contains support for official
+India Meteorological Department observations.
 
-IMD_AUTH_HEADER_VALUE
+Possible values include:
 
-Use the exact authentication header name/value provided by your IMD API account.
-These are intentionally configurable because the public IMD API reference documents endpoints/fields but not a universal public authentication header scheme.
+- Temperature
+- Humidity
+- Wind speed
+- 24-hour rainfall
+- Observation station
+- Observation date and time
 
+IMD API authentication must be configured before
+official IMD observations become available.
 
-If the IMD secrets are absent, the app does NOT invent an observation. It displays that official observation access is not configured.
+If official observation data cannot be retrieved,
+HimRakshak will display:
 
+"No official observation available"
 
-Important safety behavior
+The application will not create or fabricate an
+official IMD reading.
 
-The HimRakshak 0–100 score remains an experimental weighted heuristic.
-It is NOT an official probability or government warning.
+---
 
+## HimRakshak Experimental Risk Engine
 
-Official NDMA/IMD information is displayed separately and should take precedence.
+HimRakshak calculates experimental:
 
+- Landslide indicator
+- Flood indicator
+- Overall hazard indicator
+
+Scores are displayed from 0 to 100.
+
+These scores are not official probabilities.
+
+For example:
+
+Landslide Indicator: 78/100
+
+does not mean there is officially a 78% probability
+of a landslide.
+
+---
+
+## Landslide Calculation
+
+The current experimental landslide model uses:
+
+- Rainfall: 45%
+- Soil moisture: 30%
+- Elevation: 20%
+- Wind: 5%
+
+Conceptually:
+
+Rainfall
++
+Soil moisture
++
+Elevation
++
+Wind
+=
+Experimental landslide indicator
+
+---
+
+## Flood Calculation
+
+The current experimental flood model uses:
+
+- Rainfall: 70%
+- Soil moisture: 20%
+- Next 12-hour rainfall: 10%
+
+The higher value between the landslide and flood
+indicators is currently used as the overall
+experimental risk indicator.
+
+---
+
+## Explainable Risk
+
+HimRakshak attempts to explain why a risk score is
+elevated.
+
+Examples:
+
+- Heavy recent rainfall
+- Forecast rainfall
+- Wet soil
+- High elevation
+- Strong wind
+
+This makes the experimental score easier to
+understand instead of showing only a number.
+
+---
+
+## Map
+
+HimRakshak supports Mapbox when a Mapbox access
+token is configured.
+
+Available modes:
+
+- Satellite
+- Hybrid
+- Terrain / 3D
+
+If Mapbox is not configured, the application falls
+back to OpenStreetMap.
+
+Existing functionality including GPS, location
+search and map tapping remains available.
+
+---
+
+## Data Sources
+
+The application can use several different data
+sources.
+
+### Official information
+
+- India Meteorological Department
+- NDMA SACHET
+
+### Location information
+
+- OpenStreetMap Nominatim
+
+### Experimental model inputs
+
+- Open-Meteo
+- Elevation/environmental information
+
+Official information and experimental calculations
+are intentionally displayed separately.
+
+---
+
+## Data Freshness
+
+Official observation cards show observation and
+fetch timestamps when available.
+
+Users should check the observation time before
+making decisions.
+
+Older observations may not represent current
+conditions.
+
+---
+
+## Critical Alerts
+
+The app can generate local Android notifications
+when the experimental HimRakshak risk crosses the
+configured critical threshold.
+
+These notifications are:
+
+Experimental HimRakshak notifications.
+
+They are not official IMD, NDMA or government
+emergency notifications.
+
+Official alerts are displayed separately.
+
+---
+
+## GitHub Secrets
+
+The GitHub Actions workflow supports the following
+repository secrets.
+
+### MAPBOX_ACCESS_TOKEN
+
+Used for Mapbox maps.
+
+Add it in:
+
+Settings
+→ Secrets and variables
+→ Actions
+→ New repository secret
+
+Secret name:
+
+MAPBOX_ACCESS_TOKEN
+
+---
+
+### IMD_AUTH_HEADER_NAME
+
+Authentication header name supplied for your IMD
+API access.
+
+---
+
+### IMD_AUTH_HEADER_VALUE
+
+Authentication header value supplied for your IMD
+API access.
+
+Never hardcode private API credentials directly
+inside main.dart.
+
+---
+
+## Build
+
+The Android APK is automatically generated using
+GitHub Actions.
+
+Workflow:
+
+.github/workflows/build-apk.yml
+
+The workflow performs:
+
+1. Flutter setup
+2. Android project generation
+3. Android permissions configuration
+4. Dependency installation
+5. Flutter analysis
+6. Release APK build
+7. APK artifact upload
+
+---
+
+## Android Permissions
+
+The application requires:
+
+- Internet
+- Fine location
+- Coarse location
+- Notifications
+
+Location permissions are required to determine the
+user's GPS position.
+
+---
+
+## Safety Disclaimer
+
+HimRakshak AI is an experimental research and
+decision-support application.
+
+It should not be used as the sole source for
+emergency decisions.
+
+The calculated 0–100 risk indicators are heuristic
+experimental indicators and are not official
+probabilities.
+
+Always follow authorized alerts from agencies such
+as:
+
+- IMD
+- NDMA
+- State Disaster Management Authorities
+- District administration
+- Other authorized emergency agencies
+
+In an emergency, contact the appropriate local
+emergency services and follow official evacuation
+instructions.
