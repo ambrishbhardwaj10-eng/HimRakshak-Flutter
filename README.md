@@ -1,15 +1,58 @@
-# HimRakshak AI — Flutter Live MVP
+#HimRakshak AI — Official Data Upgrade
 
-Live/near-live Uttarakhand mountain-hazard decision-support app.
+This package is a drop-in replacement for the three files you shared.
 
-## Live data
-Uses Open-Meteo hourly precipitation, soil moisture, wind and temperature data for monitored Uttarakhand locations. The displayed hazard scores are transparent MVP heuristics and are **not** an official early-warning model.
 
-## Build APK in GitHub Actions
-1. Push this repository to GitHub.
-2. Open **Actions** → **Build HimRakshak APK**.
-3. Tap **Run workflow**.
-4. After completion, download the artifact **HimRakshak-release-apk**.
-5. Extract it on Android; inside is `app-release.apk`.
+Added
 
-The workflow creates the Android platform project automatically, so only Flutter source files are stored here.
+
+#NDMA SACHET official CAP/RSS alert feed integration.
+
+#IMD official observation integration scaffold using the official Current Weather API.
+
+#Clear separation between official observations/alerts and the experimental HimRakshak 0–100 score.
+
+Data timestamps / freshness labels.
+
+Explainable risk card ("Why is this score high?").
+
+Optional Mapbox map upgrade:
+Satellite
+Hybrid (Mapbox Standard Satellite)
+Terrain / 3D
+
+Existing OSM map remains as a fallback if no Mapbox token is configured.
+
+Existing GPS, search, map tap, risk calculation and local critical notifications are preserved.
+
+
+#GitHub Actions secrets
+
+Create these repository secrets:
+
+
+
+#MAPBOX_ACCESS_TOKEN
+
+Public Mapbox access token used by the mobile SDK.
+
+IMD_AUTH_HEADER_NAME
+
+
+IMD_AUTH_HEADER_VALUE
+
+Use the exact authentication header name/value provided by your IMD API account.
+These are intentionally configurable because the public IMD API reference documents endpoints/fields but not a universal public authentication header scheme.
+
+
+If the IMD secrets are absent, the app does NOT invent an observation. It displays that official observation access is not configured.
+
+
+Important safety behavior
+
+The HimRakshak 0–100 score remains an experimental weighted heuristic.
+It is NOT an official probability or government warning.
+
+
+Official NDMA/IMD information is displayed separately and should take precedence.
+
