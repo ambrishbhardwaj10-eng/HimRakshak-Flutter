@@ -64,7 +64,7 @@ jobs:
               insert = (
                   "\n"
                   + "\n".join(
-                      "    " + item
+                      " " + item
                       for item in missing
                   )
                   + "\n"
@@ -103,7 +103,7 @@ jobs:
               gradle = gradle.replace(
                   "compileOptions {",
                   "compileOptions {\n"
-                  "        "
+                  " "
                   "isCoreLibraryDesugaringEnabled = true",
                   1,
               )
@@ -112,7 +112,7 @@ jobs:
               gradle = gradle.replace(
                   "defaultConfig {",
                   "defaultConfig {\n"
-                  "        multiDexEnabled = true",
+                  " multiDexEnabled = true",
                   1,
               )
 
@@ -125,7 +125,7 @@ jobs:
           if dependency not in gradle:
               gradle += (
                   "\n\ndependencies {\n"
-                  f"    {dependency}\n"
+                  f" {dependency}\n"
                   "}\n"
               )
 
@@ -139,7 +139,15 @@ jobs:
         run: flutter analyze --no-fatal-infos
 
       - name: Build release APK
-        run: flutter build apk --release
+        env:
+          MAPBOX_ACCESS_TOKEN: ${{ secrets.MAPBOX_ACCESS_TOKEN }}
+          IMD_AUTH_HEADER_NAME: ${{ secrets.IMD_AUTH_HEADER_NAME }}
+          IMD_AUTH_HEADER_VALUE: ${{ secrets.IMD_AUTH_HEADER_VALUE }}
+        run: |
+          flutter build apk --release \
+            --dart-define=MAPBOX_ACCESS_TOKEN="$MAPBOX_ACCESS_TOKEN" \
+            --dart-define=IMD_AUTH_HEADER_NAME="$IMD_AUTH_HEADER_NAME" \
+            --dart-define=IMD_AUTH_HEADER_VALUE="$IMD_AUTH_HEADER_VALUE"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
